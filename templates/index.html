@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CONAF – Sistema de Seguimiento de Trámites</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════ HEADER ══════════════════════ -->
+<header class="app-header">
+  <div class="header-left">
+    <div class="header-brand">Plataforma de seguimiento de Permisos en el SNAP</div>
+  </div>
+  <div class="header-center">
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="dashboard">📊 Dashboard</button>
+      <button class="tab-btn" data-tab="tramites">📋 Trámites</button>
+      <button class="tab-btn" data-tab="busqueda">🔍 Búsqueda</button>
+      <button class="tab-btn" data-tab="exportar">📥 Exportar</button>
+    </nav>
+  </div>
+  <div class="header-right">
+    <div class="header-rango">
+      <select id="rango-desde" class="select-anio"></select>
+      <span class="rango-sep">–</span>
+      <select id="rango-hasta" class="select-anio"></select>
+    </div>
+    <button id="btn-refresh" class="btn-icon" title="Actualizar datos">
+      <span id="refresh-icon">↻</span>
+    </button>
+    <div id="last-update" class="last-update">–</div>
+  </div>
+</header>
+
+<!-- ══════════════════════ LOADING OVERLAY ══════════════════════ -->
+<div id="loading-overlay" class="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loading-text">Cargando datos…</div>
+</div>
+
+<!-- ══════════════════════ MAIN ══════════════════════ -->
+<main class="app-main">
+
+  <!-- ── TAB: DASHBOARD ── -->
+  <section id="tab-dashboard" class="tab-content active">
+    <div class="section-title">Panel de Control</div>
+
+    <!-- KPI Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card kpi-total">
+        <div class="kpi-icon">📁</div>
+        <div class="kpi-value" id="kpi-total">–</div>
+        <div class="kpi-label">Total Trámites</div>
+      </div>
+      <div class="kpi-card kpi-pendiente">
+        <div class="kpi-icon">⏳</div>
+        <div class="kpi-value" id="kpi-pendiente">–</div>
+        <div class="kpi-label">Pendientes</div>
+      </div>
+      <div class="kpi-card kpi-completado">
+        <div class="kpi-icon">✅</div>
+        <div class="kpi-value" id="kpi-completado">–</div>
+        <div class="kpi-label">Completados</div>
+      </div>
+      <div class="kpi-card kpi-rechazado">
+        <div class="kpi-icon">❌</div>
+        <div class="kpi-value" id="kpi-rechazado">–</div>
+        <div class="kpi-label">Rechazados</div>
+      </div>
+      <div class="kpi-card kpi-avance">
+        <div class="kpi-icon">📈</div>
+        <div class="kpi-value" id="kpi-avance">–</div>
+        <div class="kpi-label">Avance Promedio</div>
+      </div>
+      <div class="kpi-card kpi-vencidos">
+        <div class="kpi-icon">🚨</div>
+        <div class="kpi-value" id="kpi-vencidos">–</div>
+        <div class="kpi-label">Con Etapas Vencidas</div>
+      </div>
+    </div>
+
+    <!-- Charts row -->
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">Distribución por Estado</div>
+        <canvas id="chart-estados" height="220"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Trámites por Región y Estado</div>
+        <canvas id="chart-procesos" height="220"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Avance Promedio por Región</div>
+        <canvas id="chart-avance" height="220"></canvas>
+      </div>
+    </div>
+
+    <!-- Tiempos de respuesta -->
+    <div class="section-card">
+      <div class="section-card-title">⏱ Tiempo Promedio de Resolución</div>
+      <div id="tabla-tiempos-respuesta"></div>
+    </div>
+
+    <!-- Vencimientos próximos -->
+    <div class="section-card">
+      <div class="section-card-title">🚨 Etapas con Vencimiento Próximo (≤ 7 días)</div>
+      <div id="tabla-vencimientos" class="table-wrapper">
+        <div class="empty-msg">Cargando…</div>
+      </div>
+    </div>
+
+    <!-- Últimos trámites -->
+    <div class="section-card">
+      <div class="section-card-title">🕐 Trámites Recientes</div>
+      <div id="tabla-recientes" class="table-wrapper">
+        <div class="empty-msg">Cargando…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── TAB: TRAMITES ── -->
+  <section id="tab-tramites" class="tab-content">
+    <div class="section-title">Listado de Trámites</div>
+
+    <!-- Filters -->
+    <div class="filter-bar">
+      <!-- Fila 1: Estado + Proceso -->
+      <div class="filter-group">
+        <label>Estado</label>
+        <select id="filter-estado">
+          <option value="">Todos</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="completado">Completado</option>
+          <option value="rechazado">Rechazado</option>
+        </select>
+      </div>
+      <div class="filter-group filter-group--wide">
+        <label>Proceso</label>
+        <select id="filter-proceso">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <!-- Fila 2: Región (ancha) -->
+      <div class="filter-group filter-group--full">
+        <label>Región</label>
+        <select id="filter-region">
+          <option value="">Todas</option>
+        </select>
+      </div>
+      <!-- Fila 3: fechas + botones -->
+      <div class="filter-group">
+        <label>Fecha inicio desde</label>
+        <input type="date" id="filter-fecha-inicio" />
+      </div>
+      <div class="filter-group">
+        <label>Fecha inicio hasta</label>
+        <input type="date" id="filter-fecha-fin" />
+      </div>
+      <div class="filter-group filter-group--btns">
+        <button class="btn-primary" id="btn-aplicar-filtros">Aplicar filtros</button>
+        <button class="btn-secondary" id="btn-limpiar-filtros">Limpiar</button>
+      </div>
+    </div>
+
+    <div class="results-bar">
+      <span id="tramites-count">0 trámites</span>
+      <button class="btn-export" id="btn-export-lista">📥 Exportar Excel</button>
+    </div>
+
+    <div id="tabla-tramites" class="table-wrapper">
+      <div class="empty-msg">Cargando…</div>
+    </div>
+  </section>
+
+  <!-- ── TAB: BÚSQUEDA ── -->
+  <section id="tab-busqueda" class="tab-content">
+    <div class="section-title">Búsqueda de Trámites</div>
+
+    <div class="search-box-container">
+      <div class="search-input-row">
+        <input type="text" id="search-input" placeholder="Buscar por ID, nombre, email o área protegida…" />
+        <button class="btn-primary" id="btn-buscar">🔍 Buscar</button>
+      </div>
+      <div class="search-hint" id="search-hint">Ingrese un ID numérico, nombre, email o nombre de área protegida</div>
+    </div>
+
+    <div id="search-results" class="search-results">
+      <div class="empty-msg">Realice una búsqueda para ver resultados</div>
+    </div>
+  </section>
+
+  <!-- ── TAB: REGIONAL ── -->
+  <!-- ── TAB: EXPORTAR ── -->
+  <section id="tab-exportar" class="tab-content">
+    <div class="section-title">Exportar Datos</div>
+
+    <div class="export-form-card">
+      <div class="export-form-title">Configurar exportación Excel</div>
+      <div class="export-form-grid">
+        <div class="filter-group">
+          <label>Estado</label>
+          <select id="export-estado">
+            <option value="">Todos</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="completado">Completado</option>
+            <option value="rechazado">Rechazado</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Proceso / Tipo</label>
+          <select id="export-proceso">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Fecha creación desde</label>
+          <input type="date" id="export-fecha-inicio" />
+        </div>
+        <div class="filter-group">
+          <label>Fecha creación hasta</label>
+          <input type="date" id="export-fecha-fin" />
+        </div>
+        <div class="filter-group">
+          <label>Fecha término desde</label>
+          <input type="date" id="export-termino-inicio" />
+        </div>
+        <div class="filter-group">
+          <label>Fecha término hasta</label>
+          <input type="date" id="export-termino-fin" />
+        </div>
+      </div>
+      <div class="export-btn-row">
+        <button class="btn-export-big" id="btn-descargar-excel">
+          📥 Descargar Excel
+        </button>
+      </div>
+      <div class="export-info">
+        El archivo incluirá: ID, estado, tipo de trámite, nombre del solicitante, email,
+        región, fechas, porcentaje de avance, responsable de etapa actual y fecha de vencimiento.
+        Colores por estado: <span style="color:#856404">■ Pendiente</span>
+        <span style="color:#155724"> ■ Completado</span>
+        <span style="color:#721c24"> ■ Rechazado</span>
+      </div>
+    </div>
+
+    <div class="export-form-card" style="margin-top:20px">
+      <div class="export-form-title">⚖️ Cumplimiento – Numeral 6 Reglamento de Investigación</div>
+      <div class="export-info" style="margin-bottom:14px">
+        Descarga un Excel con todos los permisos de investigación históricos donde han
+        transcurrido <strong>más de 3 años</strong> desde la <strong>Fecha Término de Actividades</strong>
+        declarada en el formulario.<br>
+        Columnas: ID, Estado, Nombre, Email, Título, Fecha Término Actividades, Años Transcurridos,
+        Última Modificación, Regiones.<br>
+        <em style="color:#856404">⚠️ La generación puede tardar 1–2 minutos mientras se consultan
+        los registros históricos.</em>
+      </div>
+      <div class="export-btn-row">
+        <button class="btn-export-big" id="btn-descargar-compliance"
+                style="background:#7B1C1C">
+          📥 Descargar Excel Cumplimiento Numeral 6
+        </button>
+      </div>
+    </div>
+
+    <div class="export-form-card" style="margin-top:20px">
+      <div class="export-form-title">📧 Envío de correos – Numeral 6</div>
+      <div class="export-info" style="margin-bottom:14px">
+        Envía correos individuales a cada investigador solicitando la entrega de informes finales,
+        papers en PDF y material complementario. Permite revisar cada correo antes de enviarlo.
+      </div>
+      <div class="export-btn-row">
+        <button class="btn-export-big" id="btn-abrir-correos" style="background:#1a4971">
+          📧 Gestionar envío de correos
+        </button>
+      </div>
+    </div>
+  </section>
+
+
+</main>
+
+<!-- ══════════════════════ MODAL: DETALLE TRÁMITE ══════════════════════ -->
+<div id="modal-tramite" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-tramite-title">Detalle del Trámite</div>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-tramite-body">
+      Cargando…
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ MODAL: CORREOS ══════════════════════ -->
+<div id="modal-correos" class="modal-overlay" style="display:none">
+  <div class="modal-box modal-box--wide">
+    <div class="modal-header">
+      <div class="modal-title">📧 Borradores Gmail – Numeral 6</div>
+      <button class="modal-close" id="modal-correos-close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-correos-body">
+
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px;padding:10px 14px;background:var(--surface2);border-radius:8px">
+        ✉️ Cada correo se abrirá en <strong>Gmail</strong> listo para revisar y enviar. No requiere configuración adicional.
+      </div>
+
+      <!-- Progress bar -->
+      <div class="correos-progreso" id="correos-progreso" style="display:none">
+        <div class="correos-stats" id="correos-stats"></div>
+        <div class="progress-bar-wrap" style="height:8px;margin-top:6px">
+          <div class="progress-bar-fill" id="correos-progreso-fill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- Load + status -->
+      <div style="display:flex;align-items:center;gap:12px;margin:14px 0 8px">
+        <button class="btn-primary" id="btn-cargar-correos">🔍 Cargar lista</button>
+        <span id="correos-load-status" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+
+      <!-- Table -->
+      <div id="correos-lista"></div>
+
+      <!-- Preview panel -->
+      <div id="correos-preview" class="correo-preview-panel" style="display:none">
+        <div class="correo-preview-header">
+          <div>
+            <div style="font-weight:700">Vista previa</div>
+            <div class="correo-preview-meta" id="preview-meta"></div>
+          </div>
+          <button class="modal-close" id="preview-close">✕</button>
+        </div>
+        <div id="preview-html" class="correo-preview-body"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

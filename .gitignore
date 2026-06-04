@@ -1,0 +1,46 @@
+# ── Secretos y credenciales ────────────────────────────────────────────────────
+.env
+gmail_token.json
+gmail_credentials.json
+
+# ── Carpeta de investigadores (archivos de campo, no van en git) ───────────────
+Investigaciones/
+
+# ── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# ── Logs ───────────────────────────────────────────────────────────────────────
+*.log
+flask.log
+flask_err.log
+reorganizar_local.log
+reorganizar_local_err.log
+reorganizar_v2.log
+reorganizar_v2_err.log
+
+# ── Herramientas locales / IDE ──────────────────────────────────────────────────
+.claude/
+.vscode/
+.idea/
+
+# ── Scripts de diagnóstico (solo uso local) ────────────────────────────────────
+check_*.py
+find_id_range.py
+reorganizar_v2.py
+reorganizar_investigaciones.py
+monitor.ps1
+check_proc.ps1
+kill_reorg.ps1
+launch_reorg.ps1
+launch_reorg_local.ps1
+restart_flask.ps1
+
+# ── Windows ────────────────────────────────────────────────────────────────────
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,34 @@
+# Datos grandes que se montan como volumen
+Investigaciones/
+
+# Credenciales y secretos
+.env
+gmail_token.json
+gmail_credentials.json
+
+# Git y herramientas de desarrollo
+.git/
+.claude/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+
+# Scripts de diagnóstico y reorganización (no necesarios en producción)
+check_*.py
+find_id_range.py
+reorganizar_v2.py
+reorganizar_investigaciones.py
+reorganizar_v2.log
+
+# Scripts PowerShell (solo para Windows)
+*.ps1
+
+# Windows batch
+iniciar.bat

@@ -1,0 +1,21 @@
+# ── Configuración Caddy para permisos.monitoreo-snap.cl ────────────────────────
+#
+# Agregar este bloque al Caddyfile existente en el servidor GCloud.
+# Caddy gestiona automáticamente el certificado TLS (Let's Encrypt).
+#
+# Ubicación típica del Caddyfile en Linux: /etc/caddy/Caddyfile
+# Recargar después de editar: sudo caddy reload --config /etc/caddy/Caddyfile
+
+permisos.monitoreo-snap.cl {
+    # Proxy hacia el container Docker (puerto 8000)
+    reverse_proxy localhost:8000
+
+    # Logs de acceso (opcional)
+    log {
+        output file /var/log/caddy/permisos_snap.log
+        format json
+    }
+
+    # Compresión (opcional, mejora rendimiento)
+    encode gzip
+}

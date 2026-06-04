@@ -1,0 +1,25 @@
+services:
+  app:
+    build: .
+    image: permisos-snap:latest
+    container_name: permisos_snap
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - CEROFILAS_API_BASE=${CEROFILAS_API_BASE:-https://conaf.cerofilas.gob.cl/backend/api}
+      - GMAIL_REDIRECT_URI=${GMAIL_REDIRECT_URI:-http://localhost:8000/auth/gmail/callback}
+    volumes:
+      # Archivos entregados por investigadores (persisten fuera del container)
+      - ./Investigaciones:/app/Investigaciones
+      # Credenciales Gmail OAuth (se crean al autorizar por primera vez)
+      - ./gmail_token.json:/app/gmail_token.json
+      - ./gmail_credentials.json:/app/gmail_credentials.json
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
