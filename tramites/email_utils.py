@@ -6,7 +6,10 @@ from email.mime.text import MIMEText
 
 from django.conf import settings
 
-GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.compose']
+GMAIL_SCOPES = [
+    'https://www.googleapis.com/auth/gmail.compose',
+    'https://www.googleapis.com/auth/drive.readonly',
+]
 
 _GMAIL_IMPORT_ERROR = None
 try:

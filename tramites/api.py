@@ -408,6 +408,34 @@ def create_draft_route(request):
 
 # ── Investigaciones ───────────────────────────────────────────────────────────
 
+@api.get('/investigaciones/drive/')
+def investigaciones_drive(request):
+    """Lista archivos desde Google Drive (carpeta SNAP configurada)."""
+    from .drive_utils import get_cached_index
+    data, err = get_cached_index()
+    if err == 'needs_auth':
+        return {
+            'ok': False, 'needs_auth': True, 'data': {},
+            'error': 'Drive no autorizado. Ve a /auth/gmail/start para autenticar.',
+        }
+    if err:
+        return api.create_response(
+            request, {'ok': False, 'needs_auth': False, 'data': {}, 'error': err}, status=500,
+        )
+    return {'ok': True, 'needs_auth': False, 'data': data}
+
+
+@api.post('/investigaciones/drive/refresh')
+def investigaciones_drive_refresh(request):
+    """Invalida el caché de Drive y fuerza recarga."""
+    from .drive_utils import invalidate_cache, get_cached_index
+    invalidate_cache()
+    data, err = get_cached_index()
+    if err:
+        return {'ok': False, 'error': err}
+    return {'ok': True, 'data': data}
+
+
 @api.get('/investigaciones/index')
 def investigaciones_index(request):
     if not os.path.isdir(INV_DIR):

@@ -19,6 +19,7 @@ const STATE = {
   portadaHistorico: [],      // TODOS los permisos de inv+film para los gráficos de Portada
   fromCache: false,
   dashFilter: 'all',         // 'all' | 'inv' | 'film'
+  driveNeedsAuth: false,
 };
 
 // ─── Investigaciones helpers ──────────────────────────────────────────────────
@@ -118,8 +119,14 @@ function getArchivosTramite(tramiteId, nombre) {
 
 async function loadInvestigaciones() {
   try {
-    const data = await fetchJSON('/api/investigaciones/index');
-    if (data.ok) STATE.investigaciones = data.data || {};
+    const [local, drive] = await Promise.allSettled([
+      fetchJSON('/api/investigaciones/index'),
+      fetchJSON('/api/investigaciones/drive/'),
+    ]);
+    const localData  = (local.status  === 'fulfilled' && local.value?.ok)  ? (local.value.data  || {}) : {};
+    const driveData  = (drive.status  === 'fulfilled' && drive.value?.ok)  ? (drive.value.data  || {}) : {};
+    STATE.driveNeedsAuth = drive.status === 'fulfilled' && drive.value?.needs_auth === true;
+    STATE.investigaciones = { ...localData, ...driveData };
   } catch(e) {
     console.warn('No se pudo cargar índice de investigaciones:', e.message);
   }
@@ -1295,7 +1302,12 @@ function renderTablaEntregadas(filtroTema) {
     : entradas;
 
   if (!filtradas.length) {
-    el.innerHTML = '<div class="empty-msg">Sin investigaciones con archivos entregados</div>';
+    const authMsg = STATE.driveNeedsAuth
+      ? `<div style="margin-top:10px;padding:10px 14px;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;font-size:13px;color:#856404">
+           ⚠️ Drive no autorizado. <a href="/auth/gmail/start" style="color:#856404;font-weight:700">Autorizar acceso</a> para vincular archivos de Google Drive.
+         </div>`
+      : '';
+    el.innerHTML = '<div class="empty-msg">Sin investigaciones con archivos entregados</div>' + authMsg;
     return;
   }
 
