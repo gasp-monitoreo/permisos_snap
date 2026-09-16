@@ -88,7 +88,7 @@ INVESTIGACIONES_DIR = str(BASE_DIR / 'Investigaciones')
 GMAIL_AUTH_DIR      = str(BASE_DIR / 'gmail_auth')
 
 CEROFILAS_API_BASE = os.environ.get('CEROFILAS_API_BASE', 'https://conaf.cerofilas.gob.cl/backend/api')
-CEROFILAS_TOKEN    = os.environ.get('CEROFILAS_TOKEN',    'GI1K0CaTKltnR9ziu60jBUKfsbNI13')
+CEROFILAS_TOKEN    = os.environ.get('CEROFILAS_TOKEN',    '')
 GMAIL_REDIRECT_URI = os.environ.get('GMAIL_REDIRECT_URI', 'http://localhost/auth/gmail/callback')
 
 LANGUAGE_CODE = 'es'

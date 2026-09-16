@@ -56,7 +56,7 @@ app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 CORS(app)
 
 API_BASE = os.environ.get("CEROFILAS_API_BASE", "https://conaf.cerofilas.gob.cl/backend/api")
-TOKEN    = os.environ.get("CEROFILAS_TOKEN",    "GI1K0CaTKltnR9ziu60jBUKfsbNI13")
+TOKEN    = os.environ.get("CEROFILAS_TOKEN",    "")
 
 ESTADO_COLORES = {
     "pendiente": "#FFC107",
