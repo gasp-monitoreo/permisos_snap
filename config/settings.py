@@ -18,6 +18,7 @@ CSRF_TRUSTED_ORIGINS = [
 INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
+    'django.contrib.staticfiles',
     'tramites',
 ]
 
@@ -94,3 +95,4 @@ GMAIL_REDIRECT_URI = os.environ.get('GMAIL_REDIRECT_URI', 'http://localhost/auth
 LANGUAGE_CODE = 'es'
 TIME_ZONE     = 'America/Santiago'
 USE_TZ        = False
+
