@@ -88,17 +88,19 @@ def gmail_auth_start(request):
     if not os.path.exists(gmail_creds_file()):
         return HttpResponse('Falta gmail_auth/credentials.json', status=400)
     redirect_uri = settings.GMAIL_REDIRECT_URI
-    auth_url, state = start_gmail_oauth_flow(redirect_uri)
+    auth_url, state, code_verifier = start_gmail_oauth_flow(redirect_uri)
     request.session['gmail_state'] = state
+    request.session['gmail_code_verifier'] = code_verifier
     return redirect(auth_url)
 
 
 def gmail_auth_callback(request):
     from .email_utils import finish_gmail_oauth_flow
-    state    = request.session.get('gmail_state', '')
+    state        = request.session.get('gmail_state', '')
+    code_verifier = request.session.get('gmail_code_verifier')
     redirect_uri = settings.GMAIL_REDIRECT_URI
     try:
-        finish_gmail_oauth_flow(state, redirect_uri, request.build_absolute_uri())
+        finish_gmail_oauth_flow(state, redirect_uri, request.build_absolute_uri(), code_verifier)
         return HttpResponse('''<html><body style="font-family:sans-serif;padding:40px;text-align:center">
             <h2 style="color:#1B4F1E">✅ Gmail vinculado correctamente</h2>
             <p>Ya puedes cerrar esta pestaña.</p>

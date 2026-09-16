@@ -141,17 +141,31 @@ def create_gmail_draft(email_cfg):
 
 
 def start_gmail_oauth_flow(redirect_uri):
+    import secrets as _secrets
+    import hashlib as _hashlib
+    import base64 as _base64
     flow = Flow.from_client_secrets_file(
         gmail_creds_file(), scopes=GMAIL_SCOPES, redirect_uri=redirect_uri
     )
-    auth_url, state = flow.authorization_url(access_type='offline', prompt='consent')
-    return auth_url, state
+    code_verifier = _secrets.token_urlsafe(48)
+    code_challenge = _base64.urlsafe_b64encode(
+        _hashlib.sha256(code_verifier.encode()).digest()
+    ).rstrip(b'=').decode()
+    auth_url, state = flow.authorization_url(
+        access_type='offline',
+        prompt='consent',
+        code_challenge=code_challenge,
+        code_challenge_method='S256',
+    )
+    return auth_url, state, code_verifier
 
 
-def finish_gmail_oauth_flow(state, redirect_uri, authorization_response):
+def finish_gmail_oauth_flow(state, redirect_uri, authorization_response, code_verifier=None):
     flow = Flow.from_client_secrets_file(
         gmail_creds_file(), scopes=GMAIL_SCOPES, state=state, redirect_uri=redirect_uri
     )
+    if code_verifier:
+        flow.code_verifier = code_verifier
     flow.fetch_token(authorization_response=authorization_response)
     creds = flow.credentials
     with open(gmail_token_file(), 'w') as f:
