@@ -1692,7 +1692,13 @@ function renderTablaVencimientos() {
     }
   });
 
-  items.sort((a, b) => a.diff - b.diff);
+  // Por vencer (diff >= 0) primero ascendente; ya vencidos (diff < 0) al final, más recientes antes
+  items.sort((a, b) => {
+    const upA = a.diff >= 0, upB = b.diff >= 0;
+    if (upA !== upB) return upA ? -1 : 1;
+    if (upA) return a.diff - b.diff;
+    return Math.abs(a.diff) - Math.abs(b.diff);
+  });
 
   if (!items.length) {
     $('tabla-vencimientos').innerHTML = '<div class="empty-msg">Sin vencimientos próximos</div>';
@@ -1850,17 +1856,24 @@ function renderTramitesTable(tramites) {
     return;
   }
 
-  // Pendientes con fecha vencida/próxima primero (ascendente por fecha), luego el resto
+  // Por vencer (hoy/futuro) primero; ya vencidos al final; no-pendiente al fondo
+  const _hoy = new Date(); _hoy.setHours(0, 0, 0, 0);
   const sorted = [...tramites].sort((a, b) => {
     const pendA = a.estado === 'pendiente';
     const pendB = b.estado === 'pendiente';
     if (pendA !== pendB) return pendA ? -1 : 1;
+    if (!pendA) return 0;
     const fvA = fechaVencimientoEfectiva(a);
     const fvB = fechaVencimientoEfectiva(b);
     if (!fvA && !fvB) return 0;
     if (!fvA) return 1;
     if (!fvB) return -1;
-    return new Date(fvA) - new Date(fvB);
+    const dA = Math.ceil((new Date(fvA) - _hoy) / 86400000);
+    const dB = Math.ceil((new Date(fvB) - _hoy) / 86400000);
+    const upA = dA >= 0, upB = dB >= 0;
+    if (upA !== upB) return upA ? -1 : 1;  // por vencer primero
+    if (upA) return dA - dB;                // por vencer: más próximo arriba
+    return Math.abs(dA) - Math.abs(dB);     // vencidos: más reciente arriba
   });
 
   const rows = sorted.map(t => {
