@@ -1838,7 +1838,20 @@ function renderTramitesTable(tramites) {
     return;
   }
 
-  const rows = tramites.map(t => {
+  // Pendientes con fecha vencida/próxima primero (ascendente por fecha), luego el resto
+  const sorted = [...tramites].sort((a, b) => {
+    const pendA = a.estado === 'pendiente';
+    const pendB = b.estado === 'pendiente';
+    if (pendA !== pendB) return pendA ? -1 : 1;
+    const fvA = fechaVencimientoEfectiva(a);
+    const fvB = fechaVencimientoEfectiva(b);
+    if (!fvA && !fvB) return 0;
+    if (!fvA) return 1;
+    if (!fvB) return -1;
+    return new Date(fvA) - new Date(fvB);
+  });
+
+  const rows = sorted.map(t => {
     const etapaActual  = t.etapa_actual;
     const vencida      = tramiteEsVencido(t);
     const rechazado    = t.estado === 'rechazado';

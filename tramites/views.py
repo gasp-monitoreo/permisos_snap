@@ -1,11 +1,13 @@
 import os
 
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 
+@login_required
 def index(request):
     return render(request, 'index.html')
 
