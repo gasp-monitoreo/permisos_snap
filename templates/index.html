@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CONAF – Sistema de Seguimiento de Trámites</title>
+  <title>CONAF – Seguimiento de Permisos SNAP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="/static/css/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -12,11 +14,16 @@
 <!-- ══════════════════════ HEADER ══════════════════════ -->
 <header class="app-header">
   <div class="header-left">
-    <div class="header-brand">Plataforma de seguimiento de Permisos en el SNAP</div>
+    <div class="header-icon">🌿</div>
+    <div class="header-brand">
+      CONAF · Permisos SNAP
+      <span>Sistema de Seguimiento</span>
+    </div>
   </div>
   <div class="header-center">
     <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="dashboard">📊 Dashboard</button>
+      <button class="tab-btn" data-tab="portada">🏠 Portada</button>
+      <button class="tab-btn active" data-tab="dashboard">📊 Resumen</button>
       <button class="tab-btn" data-tab="tramites">📋 Trámites</button>
       <button class="tab-btn" data-tab="busqueda">🔍 Búsqueda</button>
       <button class="tab-btn" data-tab="exportar">📥 Exportar</button>
@@ -44,9 +51,46 @@
 <!-- ══════════════════════ MAIN ══════════════════════ -->
 <main class="app-main">
 
+  <!-- ── TAB: PORTADA ── -->
+  <section id="tab-portada" class="tab-content">
+    <div class="section-title">Portada – Análisis Temático de Permisos SNAP</div>
+
+    <!-- Gráficos temáticos -->
+    <div class="charts-grid">
+      <div class="chart-card" style="overflow:hidden">
+        <div class="chart-title">Investigaciones por Temática</div>
+        <div style="position:relative;width:100%">
+          <canvas id="chart-temas-inv"></canvas>
+        </div>
+      </div>
+      <div class="chart-card" style="overflow:hidden">
+        <div class="chart-title">Filmaciones / Fotografías por Tipo</div>
+        <div style="position:relative;width:100%">
+          <canvas id="chart-temas-film"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Investigaciones entregadas -->
+    <div class="section-card">
+      <div class="section-card-title">📁 Investigaciones con Archivos Entregados</div>
+      <div id="portada-filtro-tema" style="display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px 6px"></div>
+      <div id="portada-tabla-entregadas" class="table-wrapper">
+        <div class="empty-msg">Cargando…</div>
+      </div>
+    </div>
+  </section>
+
   <!-- ── TAB: DASHBOARD ── -->
   <section id="tab-dashboard" class="tab-content active">
     <div class="section-title">Panel de Control</div>
+
+    <!-- Filtro de tipo -->
+    <div class="dash-filter-bar">
+      <button class="dash-filter-btn active" data-filter="all">Todos</button>
+      <button class="dash-filter-btn" data-filter="inv">🔬 Investigación</button>
+      <button class="dash-filter-btn" data-filter="film">🎬 Filmación / Fotografía</button>
+    </div>
 
     <!-- KPI Cards -->
     <div class="kpi-grid">
@@ -54,31 +98,37 @@
         <div class="kpi-icon">📁</div>
         <div class="kpi-value" id="kpi-total">–</div>
         <div class="kpi-label">Total Trámites</div>
+        <div class="kpi-split" id="kpi-total-split"></div>
       </div>
       <div class="kpi-card kpi-pendiente">
         <div class="kpi-icon">⏳</div>
         <div class="kpi-value" id="kpi-pendiente">–</div>
         <div class="kpi-label">Pendientes</div>
+        <div class="kpi-split" id="kpi-pendiente-split"></div>
       </div>
       <div class="kpi-card kpi-completado">
         <div class="kpi-icon">✅</div>
         <div class="kpi-value" id="kpi-completado">–</div>
         <div class="kpi-label">Completados</div>
+        <div class="kpi-split" id="kpi-completado-split"></div>
       </div>
       <div class="kpi-card kpi-rechazado">
         <div class="kpi-icon">❌</div>
         <div class="kpi-value" id="kpi-rechazado">–</div>
         <div class="kpi-label">Rechazados</div>
+        <div class="kpi-split" id="kpi-rechazado-split"></div>
       </div>
       <div class="kpi-card kpi-avance">
         <div class="kpi-icon">📈</div>
         <div class="kpi-value" id="kpi-avance">–</div>
         <div class="kpi-label">Avance Promedio</div>
+        <div class="kpi-split" id="kpi-avance-split"></div>
       </div>
       <div class="kpi-card kpi-vencidos">
         <div class="kpi-icon">🚨</div>
         <div class="kpi-value" id="kpi-vencidos">–</div>
         <div class="kpi-label">Con Etapas Vencidas</div>
+        <div class="kpi-split" id="kpi-vencidos-split"></div>
       </div>
     </div>
 
@@ -86,10 +136,19 @@
     <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title">Distribución por Estado</div>
-        <canvas id="chart-estados" height="220"></canvas>
+        <div id="chart-estados-container" style="display:flex;align-items:center;justify-content:space-around;gap:8px">
+          <div style="flex:1;min-width:0;text-align:center">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--accent);margin-bottom:4px">🔬 INVESTIGACIÓN</div>
+            <canvas id="chart-estados-inv" height="200"></canvas>
+          </div>
+          <div style="flex:1;min-width:0;text-align:center">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.05em;color:#E07B00;margin-bottom:4px">🎬 FILMACIÓN</div>
+            <canvas id="chart-estados-film" height="200"></canvas>
+          </div>
+        </div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Trámites por Región y Estado</div>
+        <div class="chart-title">Trámites por Región</div>
         <canvas id="chart-procesos" height="220"></canvas>
       </div>
       <div class="chart-card">
@@ -118,6 +177,14 @@
       <div id="tabla-recientes" class="table-wrapper">
         <div class="empty-msg">Cargando…</div>
       </div>
+    </div>
+
+    <!-- Duplicados regionales -->
+    <div class="section-card" id="seccion-duplicados" style="display:none">
+      <div class="section-card-title" style="background:#7D4E00;color:#FFF3CD">
+        ⚠️ Posibles Duplicados Regionales
+      </div>
+      <div id="alerta-duplicados" class="table-wrapper"></div>
     </div>
   </section>
 

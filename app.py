@@ -9,6 +9,8 @@ import re as _re
 import calendar as _calendar
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from threading import Thread
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -110,28 +112,55 @@ def _parse_date_flexible(s):
     return None
 
 
+_api_circuit = {"open": False, "opened_at": None}
+_API_CIRCUIT_COOLDOWN = 300  # 5 minutos antes de reintentar tras fallo de red
+
+def _circuit_is_open():
+    if not _api_circuit["open"]:
+        return False
+    elapsed = (datetime.now() - _api_circuit["opened_at"]).total_seconds()
+    if elapsed > _API_CIRCUIT_COOLDOWN:
+        _api_circuit["open"] = False
+        print("[api] Circuit breaker reset — reintentando conexión con CeroFilas")
+        return False
+    return True
+
 def api_get(path, params=None):
+    if _circuit_is_open():
+        raise RuntimeError("API no disponible (sin conexión a CeroFilas)")
     if params is None:
         params = {}
     params["token"] = TOKEN
     url = f"{API_BASE}{path}"
     import time as _time
-    for attempt in range(3):
-        try:
-            resp = requests.get(url, params=params, timeout=30)
-            resp.raise_for_status()
-            return resp.json()
-        except requests.HTTPError as e:
-            code = e.response.status_code if e.response is not None else 0
-            if code in (502, 503, 504) and attempt < 2:
-                _time.sleep(1.5 ** attempt)
-                continue
-            raise
-        except (requests.ConnectionError, requests.Timeout) as e:
-            if attempt < 2:
-                _time.sleep(1.5 ** attempt)
-                continue
-            raise
+    try:
+        resp = requests.get(url, params=params, timeout=12)
+        resp.raise_for_status()
+        _api_circuit["open"] = False
+        return resp.json()
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else 0
+        if code in (502, 503, 504):
+            # Un solo reintento para errores de servidor
+            _time.sleep(1)
+            try:
+                resp2 = requests.get(url, params=params, timeout=12)
+                resp2.raise_for_status()
+                _api_circuit["open"] = False
+                return resp2.json()
+            except Exception:
+                pass
+            # Reintento también falló → abrir circuit breaker
+            _api_circuit["open"]      = True
+            _api_circuit["opened_at"] = datetime.now()
+            print(f"[api] Circuit breaker abierto (HTTP {code}): {_API_CIRCUIT_COOLDOWN}s de cooldown")
+        raise
+    except Exception as e:
+        # Timeout, ConnectionError, o cualquier otro error de red
+        _api_circuit["open"]      = True
+        _api_circuit["opened_at"] = datetime.now()
+        print(f"[api] Circuit breaker abierto ({type(e).__name__}): {_API_CIRCUIT_COOLDOWN}s de cooldown")
+        raise
 
 
 def extract_datos(datos_list):
@@ -407,12 +436,21 @@ def normalize_tramite(t):
             estado_final = "completado"
 
     # ── Fecha límite por tipo de proceso ────────────────────────────────────────
+    # La fecha base es la fecha_termino de la etapa "Completar Formulario de Solicitud"
+    # (cuando el solicitante realmente envió la solicitud), no el fecha_inicio del trámite
+    # (que solo indica cuándo empezó a llenar el formulario).
     proceso_id_val = t.get("proceso_id")
     fecha_limite_proceso = None
-    fecha_inicio_str = t.get("fecha_inicio")
-    if fecha_inicio_str and proceso_id_val in PROCESO_PLAZO_MESES:
+    _fecha_envio = None
+    for _e in etapas_info:
+        _nombre_tarea = (_e.get("tarea_nombre") or "").lower()
+        if "completar formulario" in _nombre_tarea or "formulario de solicitud" in _nombre_tarea:
+            _fecha_envio = _e.get("fecha_termino")
+            break
+    fecha_base_str = _fecha_envio or t.get("fecha_inicio")
+    if fecha_base_str and proceso_id_val in PROCESO_PLAZO_MESES:
         try:
-            fi = datetime.strptime(str(fecha_inicio_str)[:19], "%Y-%m-%d %H:%M:%S")
+            fi = datetime.strptime(str(fecha_base_str)[:19], "%Y-%m-%d %H:%M:%S")
             fl = _add_months(fi, PROCESO_PLAZO_MESES[proceso_id_val])
             fecha_limite_proceso = fl.strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
@@ -596,9 +634,45 @@ def fetch_all_processes():
     return items
 
 
+# ─── Caché en disco ──────────────────────────────────────────────────────────
+# Los datos históricos se guardan en JSON para sobrevivir reinicios de Flask.
+# Carga al arrancar → respuesta inmediata; refresco en background si >24 h.
+
+CACHE_DIR = Path(__file__).parent / "cache"
+CACHE_DIR.mkdir(exist_ok=True)
+
+_CACHE_STALE_HOURS = 24   # Refresca en background si los datos tienen más de esto
+
+def _save_disk_cache(name: str, data) -> None:
+    try:
+        path = CACHE_DIR / f"{name}.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"ts": datetime.now().isoformat(), "data": data}, f,
+                      ensure_ascii=False, default=str)
+    except Exception as exc:
+        print(f"[cache] Error guardando {name}: {exc}")
+
+def _load_disk_cache(name: str):
+    """Retorna (data, age_hours) o (None, None) si no existe o está corrupto."""
+    path = CACHE_DIR / f"{name}.json"
+    if not path.exists():
+        return None, None
+    try:
+        with open(path, encoding="utf-8") as f:
+            obj = json.load(f)
+        ts    = datetime.fromisoformat(obj["ts"])
+        age_h = (datetime.now() - ts).total_seconds() / 3600
+        return obj["data"], age_h
+    except Exception as exc:
+        print(f"[cache] Error cargando {name}: {exc}")
+        return None, None
+
 # ─── Compliance helpers ───────────────────────────────────────────────────────
 
 INVESTIGACION_PROCESO_IDS = [517, 692, 1992]
+
+_compliance_cache = {"ts": None, "data": None, "revisados": 0}
+_COMPLIANCE_TTL   = 1800  # 30 minutos
 
 def _fetch_compliance_data():
     """
@@ -606,7 +680,11 @@ def _fetch_compliance_data():
     desde 'fecha_termino_actividades' (numeral 6 del reglamento).
     Retorna (lista_resultados, candidatos_revisados).
     """
+    global _compliance_cache
     HOY = datetime.now()
+    if (_compliance_cache["ts"] and
+            (HOY - _compliance_cache["ts"]).total_seconds() < _COMPLIANCE_TTL):
+        return _compliance_cache["data"], _compliance_cache["revisados"]
 
     # 1. Listar solo tramites creados hace MAS de 3 años (created_at_end al API)
     #    y en paralelo para los 3 procesos de investigacion.
@@ -625,6 +703,13 @@ def _fetch_compliance_data():
     with ThreadPoolExecutor(max_workers=len(INVESTIGACION_PROCESO_IDS)) as ex:
         for items in ex.map(_fetch_list, INVESTIGACION_PROCESO_IDS):
             all_raw.extend(items)
+
+    # Si la API falló (circuit abierto), no destruir la caché existente
+    if not all_raw:
+        existing_data = _compliance_cache.get("data")
+        if existing_data is not None:
+            _compliance_cache["ts"] = HOY  # refrescar timestamp
+            return existing_data, _compliance_cache.get("revisados", 0)
 
     # 2. Deduplicar IDs
     seen_ids = set()
@@ -675,12 +760,39 @@ def _fetch_compliance_data():
                 datos.get("titulo") or ""
             )
 
+            # Texto rico para clasificación temática en el frontend
+            texto_clasi = " ".join(filter(None, [
+                titulo,
+                datos.get("objetivos_del_proyecto") or "",
+                datos.get("descripcion") or "",
+                datos.get("descripcion_proyecto") or "",
+                datos.get("objetivo_general") or "",
+                datos.get("objetivos_especificos") or "",
+                datos.get("actividades") or "",
+                datos.get("actividades_a_realizar") or "",
+                datos.get("palabras_clave") or "",
+                datos.get("especie") or "",
+                datos.get("especies") or "",
+                datos.get("nombre_cientifico") or "",
+                datos.get("tipo_investigacion") or "",
+                datos.get("linea_investigacion") or "",
+            ]))
+
+            colecta = (
+                datos.get("colecta_de_muestras") or datos.get("colecta_muestras") or
+                datos.get("recoleccion_muestras") or datos.get("muestras_biologicas") or
+                datos.get("colecta_material_biologico") or datos.get("colecta") or
+                datos.get("tipo_colecta") or datos.get("requiere_colecta") or ""
+            )
+
             return {
                 "id": norm["id"],
                 "estado": norm["estado"],
                 "nombre_solicitante": norm["nombre_solicitante"],
                 "email_solicitante": norm["email_solicitante"],
                 "titulo_investigacion": str(titulo).strip(),
+                "texto_clasificacion": texto_clasi.strip(),
+                "colecta_muestras": str(colecta).strip(),
                 "fecha_termino_actividades": str(fta_str).strip()[:10],
                 "anios_transcurridos": anios,
                 "fecha_modificacion": norm["fecha_modificacion"],
@@ -702,6 +814,10 @@ def _fetch_compliance_data():
 
     # Ordenar: primero los más antiguos (fecha_termino_actividades ascendente)
     resultados.sort(key=lambda x: x.get("fecha_termino_actividades") or "")
+    _compliance_cache["ts"]        = HOY
+    _compliance_cache["data"]      = resultados
+    _compliance_cache["revisados"] = len(candidatos)
+    _save_disk_cache("compliance", resultados)
     return resultados, len(candidatos)
 
 
@@ -712,48 +828,219 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/api/procesos")
-def get_procesos():
+def _ph_to_tramite(r):
+    """Convierte un registro portada_historico a formato tramite (parcial, para fallback offline)."""
+    rl = r.get("regiones_list") or []
+    return {
+        "id":                   r["id"],
+        "estado":               r["estado"],
+        "proceso_id":           r["proceso_id"],
+        "proceso_nombre":       "",
+        "fecha_inicio":         r.get("fecha_inicio", ""),
+        "fecha_modificacion":   "",
+        "fecha_termino":        None,
+        "fecha_limite_proceso": None,
+        "nombre_solicitante":   r.get("nombre_solicitante", ""),
+        "email_solicitante":    r.get("email_solicitante", ""),
+        "region":               ", ".join(rl),
+        "regiones_list":        rl,
+        "porcentaje_avance":    0,
+        "etapa_actual":         None,
+        "etapas":               [],
+        "total_etapas":         0,
+        "etapas_completadas":   0,
+        "borrador":             False,
+        "recepcion_pendiente":  False,
+        "areas_protegidas":     [],
+        "archivo_autorizacion": None,
+        "etapa_autorizacion_id": None,
+        "datos_raw":            {"titulo_investigacion": r.get("titulo_investigacion", "")},
+    }
+
+
+def _tramites_from_any_cache():
+    """Intenta obtener datos de trámites de cualquier caché disponible.
+    Orden: tramites_all en memoria → tramites_all en disco → portada_historico."""
+    if _tramites_all_cache_mem.get("data") is not None:
+        return _tramites_all_cache_mem["data"], "tramites_all"
+    loaded, _ = _load_disk_cache("tramites_all")
+    if loaded:
+        _tramites_all_cache_mem["data"] = loaded
+        _tramites_all_cache_mem["ts"]   = datetime.now()
+        return loaded, "tramites_all"
+    ph = _portada_historico_cache.get("data")
+    if ph:
+        return [_ph_to_tramite(r) for r in ph], "portada_historico"
+    return None, None
+
+
+def _apply_tramite_filters(normalized, proceso_id, created_at_start, created_at_end):
+    """Filtra lista de trámites normalizados con los parámetros típicos del endpoint."""
+    if proceso_id:
+        try:
+            pid = int(proceso_id)
+            normalized = [t for t in normalized if t.get("proceso_id") == pid]
+        except ValueError:
+            pass
+    if created_at_start:
+        try:
+            start_iso = datetime.fromtimestamp(int(created_at_start)).strftime("%Y-%m-%d")
+            normalized = [t for t in normalized
+                          if (t.get("fecha_inicio") or "")[:10] >= start_iso]
+        except Exception:
+            pass
+    if created_at_end:
+        try:
+            end_iso = datetime.fromtimestamp(int(created_at_end)).strftime("%Y-%m-%d")
+            normalized = [t for t in normalized
+                          if (t.get("fecha_inicio") or "")[:10] <= end_iso]
+        except Exception:
+            pass
+    return normalized
+
+
+def _refresh_tramites_all():
+    """Descarga todos los trámites sin filtros y actualiza caché en disco."""
+    global _tramites_all_cache_mem
+    try:
+        raw        = fetch_all_tramites()
+        normalized = [normalize_tramite(t) for t in raw]
+        normalized = [t for t in normalized if es_tramite_visible(t)]
+        _tramites_all_cache_mem = {"ts": datetime.now(), "data": normalized}
+        _save_disk_cache("tramites_all", normalized)
+        print(f"[cache] tramites_all: {len(normalized)} trámites guardados")
+    except Exception as exc:
+        print(f"[cache] tramites_all: error en refresh: {exc}")
+
+
+def _refresh_procesos():
+    global _procesos_cache_mem
     try:
         items = fetch_all_processes()
-        return jsonify({"ok": True, "data": items})
+        _procesos_cache_mem = {"ts": datetime.now(), "data": items}
+        _save_disk_cache("procesos", items)
+        print(f"[cache] procesos: {len(items)} procesos actualizados")
+    except Exception as exc:
+        print(f"[cache] procesos: error en refresh: {exc}")
+
+
+@app.route("/api/procesos")
+def get_procesos():
+    global _procesos_cache_mem
+    try:
+        cached  = _procesos_cache_mem.get("data")
+        cache_ts = _procesos_cache_mem.get("ts")
+        age_s   = (datetime.now() - cache_ts).total_seconds() if cache_ts else None
+
+        if cached is not None:
+            # Refrescar en background si los datos tienen más de 1 hora
+            if age_s is None or age_s > 3600:
+                Thread(target=_refresh_procesos, daemon=True).start()
+            return jsonify({"ok": True, "data": cached,
+                            "from_cache": age_s is not None and age_s > 30,
+                            "circuit_open": _circuit_is_open()})
+
+        # Sin caché en memoria: cargar desde disco o API
+        loaded, _ = _load_disk_cache("procesos")
+        if loaded:
+            _procesos_cache_mem = {"ts": datetime.now(), "data": loaded}
+            Thread(target=_refresh_procesos, daemon=True).start()
+            return jsonify({"ok": True, "data": loaded, "from_cache": True})
+
+        # Primera vez sin disco: llamada directa
+        try:
+            items = fetch_all_processes()
+            _procesos_cache_mem = {"ts": datetime.now(), "data": items}
+            _save_disk_cache("procesos", items)
+            return jsonify({"ok": True, "data": items})
+        except Exception:
+            return jsonify({"ok": False, "error": "No se pudo conectar con el servidor de CeroFilas"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/tramites")
 def get_tramites():
+    global _tramites_all_cache_mem
     try:
-        proceso_id = request.args.get("proceso_id")
+        proceso_id       = request.args.get("proceso_id")
         created_at_start = request.args.get("created_at_start")
-        created_at_end = request.args.get("created_at_end")
+        created_at_end   = request.args.get("created_at_end")
         updated_at_start = request.args.get("updated_at_start")
-        updated_at_end = request.args.get("updated_at_end")
-        ended_at_start = request.args.get("ended_at_start")
-        ended_at_end = request.args.get("ended_at_end")
+        updated_at_end   = request.args.get("updated_at_end")
+        ended_at_start   = request.args.get("ended_at_start")
+        ended_at_end     = request.args.get("ended_at_end")
 
-        # Corte de paginación: si viene created_at_start, dejar de paginar
-        # cuando los trámites sean anteriores a esa fecha
-        date_cutoff = None
-        if created_at_start:
-            try:
-                date_cutoff = datetime.fromtimestamp(int(created_at_start))
-            except Exception:
-                pass
+        # ── Servir desde caché si existe (respuesta inmediata) ──────────────────
+        cached_data = _tramites_all_cache_mem.get("data")
+        cache_ts    = _tramites_all_cache_mem.get("ts")
+        cache_age_s = (datetime.now() - cache_ts).total_seconds() if cache_ts else None
 
-        raw = fetch_all_tramites(
-            proceso_id=proceso_id,
-            created_at_start=created_at_start,
-            created_at_end=created_at_end,
-            updated_at_start=updated_at_start,
-            updated_at_end=updated_at_end,
-            ended_at_start=ended_at_start,
-            ended_at_end=ended_at_end,
-            date_cutoff=date_cutoff,
-        )
-        normalized = [normalize_tramite(t) for t in raw]
-        normalized = [t for t in normalized if es_tramite_visible(t)]
-        return jsonify({"ok": True, "data": normalized, "total": len(normalized)})
+        if cached_data is not None:
+            # Si los datos son más viejos que el TTL, refrescar en background
+            if cache_age_s is not None and cache_age_s > _TRAMITES_ALL_TTL:
+                Thread(target=_refresh_tramites_all, daemon=True).start()
+
+            filtered = _apply_tramite_filters(cached_data, proceso_id, created_at_start, created_at_end)
+            return jsonify({
+                "ok":           True,
+                "data":         filtered,
+                "total":        len(filtered),
+                "from_cache":   cache_age_s is not None and cache_age_s > 30,
+                "circuit_open": _circuit_is_open(),
+            })
+
+        # ── Sin caché: intentar portada_historico como fallback ─────────────────
+        ph_data = _portada_historico_cache.get("data")
+        if ph_data:
+            tramites_ph = [_ph_to_tramite(r) for r in ph_data]
+            filtered = _apply_tramite_filters(tramites_ph, proceso_id, created_at_start, created_at_end)
+            # Lanzar refresh en background para popular el caché completo
+            Thread(target=_refresh_tramites_all, daemon=True).start()
+            return jsonify({
+                "ok":          True,
+                "data":        filtered,
+                "total":       len(filtered),
+                "from_cache":  True,
+                "cache_source": "portada_historico",
+            })
+
+        # ── Sin ningún caché: llamada directa a la API (primera carga) ──────────
+        try:
+            date_cutoff = None
+            if created_at_start:
+                try:
+                    date_cutoff = datetime.fromtimestamp(int(created_at_start))
+                except Exception:
+                    pass
+
+            raw = fetch_all_tramites(
+                proceso_id=proceso_id,
+                created_at_start=created_at_start,
+                created_at_end=created_at_end,
+                updated_at_start=updated_at_start,
+                updated_at_end=updated_at_end,
+                ended_at_start=ended_at_start,
+                ended_at_end=ended_at_end,
+                date_cutoff=date_cutoff,
+            )
+            normalized = [normalize_tramite(t) for t in raw]
+            normalized = [t for t in normalized if es_tramite_visible(t)]
+
+            if not any([proceso_id, created_at_start, created_at_end]):
+                _tramites_all_cache_mem = {"ts": datetime.now(), "data": normalized}
+                _save_disk_cache("tramites_all", normalized)
+
+            return jsonify({"ok": True, "data": normalized, "total": len(normalized)})
+
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "error": "No se pudo conectar con el servidor de CeroFilas (error 502/red). "
+                         "Intente actualizar en unos minutos.",
+                "code": "API_UNAVAILABLE",
+            }), 502
+
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -769,8 +1056,17 @@ def get_tramite(tramite_id):
         if e.response.status_code == 404:
             return jsonify({"ok": False, "error": "Trámite no encontrado"}), 404
         return jsonify({"ok": False, "error": str(e)}), 500
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    except Exception:
+        # Circuit abierto o error de red: buscar en caché local
+        cached = _tramites_all_cache_mem.get("data") or []
+        for t in cached:
+            if t.get("id") == tramite_id:
+                return jsonify({"ok": True, "data": t, "from_cache": True, "circuit_open": True})
+        return jsonify({
+            "ok": False,
+            "error": "CeroFilas no disponible y el trámite no está en caché local.",
+            "circuit_open": True,
+        }), 503
 
 
 @app.route("/api/export/excel")
@@ -913,6 +1209,103 @@ def export_excel():
             as_attachment=True,
             download_name=filename,
         )
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+_portada_historico_cache = {"ts": None, "data": None}
+_PORTADA_HISTORICO_TTL   = 1800  # 30 minutos
+
+_procesos_cache_mem    = {"ts": None, "data": None}
+_tramites_all_cache_mem = {"ts": None, "data": None}
+_TRAMITES_ALL_TTL       = 1800  # 30 minutos
+
+def _fetch_portada_historico_data():
+    """Descarga todos los permisos de investigación y filmación (listas paginadas, sin detalles individuales)."""
+    global _portada_historico_cache
+    now = datetime.now()
+    if (_portada_historico_cache["ts"] and
+            (now - _portada_historico_cache["ts"]).total_seconds() < _PORTADA_HISTORICO_TTL):
+        return _portada_historico_cache["data"]
+
+    TODOS_PROCESO_IDS = [517, 692, 1992, 437, 585, 631, 632, 672]
+
+    def _fetch(pid):
+        try:
+            items = fetch_all_tramites(proceso_id=pid)
+            resultado = []
+            for t in items:
+                norm = normalize_tramite(t)
+                if norm.get("borrador"):
+                    continue
+                d = norm.get("datos_raw", {})
+                titulo = (
+                    d.get("titulo_investigacion") or d.get("titulo_de_la_investigacion") or
+                    d.get("titulo_proyecto") or d.get("titulo_del_proyecto") or
+                    d.get("nombre_de_la_investigacion") or d.get("nombre_investigacion") or
+                    d.get("nombre_del_proyecto") or d.get("nombre_proyecto") or
+                    d.get("titulo") or ""
+                )
+                texto_clasi = " ".join(filter(None, [
+                    titulo,
+                    d.get("objetivos_del_proyecto") or "",
+                    d.get("descripcion") or "",
+                    d.get("descripcion_proyecto") or "",
+                    d.get("objetivo_general") or "",
+                    d.get("objetivos_especificos") or "",
+                    d.get("palabras_clave") or "",
+                    d.get("especie") or "",
+                    d.get("especies") or "",
+                    d.get("nombre_cientifico") or "",
+                    d.get("tipo_investigacion") or "",
+                ]))
+                resultado.append({
+                    "id":                   norm["id"],
+                    "proceso_id":           norm["proceso_id"],
+                    "estado":               norm["estado"],
+                    "nombre_solicitante":   norm["nombre_solicitante"],
+                    "email_solicitante":    norm["email_solicitante"],
+                    "titulo_investigacion": titulo.strip(),
+                    "texto_clasificacion":  texto_clasi.strip(),
+                    "regiones_list":        norm.get("regiones_list", []),
+                    "fecha_inicio":         norm.get("fecha_inicio", ""),
+                })
+            return resultado
+        except Exception:
+            return []
+
+    all_items = []
+    with ThreadPoolExecutor(max_workers=len(TODOS_PROCESO_IDS)) as ex:
+        for items in ex.map(_fetch, TODOS_PROCESO_IDS):
+            all_items.extend(items)
+
+    # Si todo falló (API caída), no destruir la caché existente
+    if not all_items:
+        existing = _portada_historico_cache.get("data")
+        if existing:
+            _portada_historico_cache["ts"] = now  # refrescar timestamp para no reintentar de inmediato
+            return existing
+        return []
+
+    seen  = set()
+    dedup = []
+    for t in all_items:
+        if t["id"] not in seen:
+            seen.add(t["id"])
+            dedup.append(t)
+
+    _portada_historico_cache["ts"]   = now
+    _portada_historico_cache["data"] = dedup
+    _save_disk_cache("portada_historico", dedup)
+    return dedup
+
+
+@app.route("/api/portada/historico")
+def portada_historico():
+    """Todos los permisos de investigación y filmación para los gráficos de la Portada."""
+    try:
+        data = _fetch_portada_historico_data()
+        return jsonify({"ok": True, "data": data, "total": len(data)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1429,6 +1822,84 @@ def serve_investigacion(filepath=''):
 
     return f'No encontrado: {filepath}', 404
 
+def _norm_nombre_carpeta(nombre: str) -> str:
+    """Convierte nombre de persona → nombre de carpeta seguro (Aldo_Arriagada_Gonzalez)."""
+    import unicodedata
+    s = unicodedata.normalize('NFD', nombre or '')
+    s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')   # quita tildes
+    s = _re.sub(r'[^\w\s]', '', s)                                   # quita puntuación
+    s = s.strip().replace(' ', '_')
+    return s or 'Sin_Nombre'
+
+
+def _carpeta_existente(nombre_carpeta: str):
+    """Busca carpeta real en INVESTIGACIONES_DIR cuyo nombre matchee por tokens."""
+    if not os.path.isdir(INVESTIGACIONES_DIR):
+        return None
+    tokens = nombre_carpeta.lower().split('_')
+    for d in os.listdir(INVESTIGACIONES_DIR):
+        dlo = d.lower()
+        if all(tok in dlo for tok in tokens if tok):
+            return d
+    return None
+
+
+@app.route('/api/investigaciones/upload', methods=['POST'])
+def investigaciones_upload():
+    """Sube archivos a Investigaciones/{carpeta}/{tramite_id}/."""
+    nombre     = request.form.get('nombre', '').strip()
+    tramite_id = request.form.get('tramite_id', '').strip()
+    archivos   = request.files.getlist('archivos')
+
+    if not nombre or not tramite_id:
+        return jsonify({"ok": False, "error": "Faltan parámetros nombre/tramite_id"}), 400
+
+    nombre_carpeta = _norm_nombre_carpeta(nombre)
+    # Reutilizar carpeta existente si ya hay una para este investigador
+    existente = _carpeta_existente(nombre_carpeta)
+    carpeta_base = existente if existente else nombre_carpeta
+
+    destino = os.path.join(INVESTIGACIONES_DIR, carpeta_base, str(tramite_id))
+    os.makedirs(destino, exist_ok=True)
+
+    guardados = []
+    errores   = []
+    for f in archivos:
+        if not f or not f.filename:
+            continue
+        # Nombre seguro: quita caracteres peligrosos
+        fname = _re.sub(r'[^\w\.\-\(\) ]', '_', f.filename).strip()
+        if not fname:
+            continue
+        ext = os.path.splitext(fname)[1].lower()
+        if ext not in INV_EXTENSIONS:
+            errores.append(f"{f.filename}: extensión no permitida ({ext})")
+            continue
+        try:
+            f.save(os.path.join(destino, fname))
+            guardados.append(fname)
+        except Exception as exc:
+            errores.append(f"{fname}: {exc}")
+
+    return jsonify({
+        "ok": True,
+        "guardados": guardados,
+        "errores": errores,
+        "carpeta": f"{carpeta_base}/{tramite_id}",
+    })
+
+
+@app.route('/api/investigaciones/archivos/<nombre>/<tramite_id>')
+def investigaciones_archivos_id(nombre, tramite_id):
+    """Lista archivos de una subcarpeta específica {nombre}/{tramite_id}."""
+    carpeta = os.path.join(INVESTIGACIONES_DIR, nombre, str(tramite_id))
+    if not os.path.abspath(carpeta).startswith(os.path.abspath(INVESTIGACIONES_DIR)):
+        return jsonify({"ok": False}), 403
+    if not os.path.isdir(carpeta):
+        return jsonify({"ok": True, "archivos": []})
+    return jsonify({"ok": True, "archivos": _inv_archivos(carpeta)})
+
+
 @app.route('/api/investigaciones/index')
 def investigaciones_index():
     """
@@ -1467,6 +1938,91 @@ def investigaciones_index():
             result[investigador] = {'tipo': 'flat', 'archivos': archivos}
 
     return jsonify({'ok': True, 'data': result})
+
+
+def _init_disk_caches():
+    """Al arrancar Flask: carga caches desde disco para respuesta inmediata.
+    Si los datos tienen >24 h, lanza refresco en background sin bloquear el servidor.
+    """
+    global _compliance_cache, _portada_historico_cache
+    global _procesos_cache_mem, _tramites_all_cache_mem
+
+    data, age_h = _load_disk_cache("compliance")
+    if data is not None:
+        _compliance_cache = {"ts": datetime.now(), "data": data, "revisados": len(data)}
+        print(f"[cache] compliance: {len(data)} registros cargados desde disco ({age_h:.1f} h)")
+        if age_h > _CACHE_STALE_HOURS:
+            print("[cache] compliance: datos viejos, refrescando en background…")
+            Thread(target=_fetch_compliance_data, daemon=True).start()
+    else:
+        print("[cache] compliance: sin caché en disco, se generará en primera consulta")
+
+    data, age_h = _load_disk_cache("portada_historico")
+    if data is not None:
+        _portada_historico_cache = {"ts": datetime.now(), "data": data}
+        print(f"[cache] portada_historico: {len(data)} registros cargados desde disco ({age_h:.1f} h)")
+        if age_h > _CACHE_STALE_HOURS:
+            print("[cache] portada_historico: datos viejos, refrescando en background…")
+            Thread(target=_fetch_portada_historico_data, daemon=True).start()
+    else:
+        print("[cache] portada_historico: sin caché en disco, se generará en primera consulta")
+
+    data, age_h = _load_disk_cache("tramites_all")
+    if data is not None:
+        _tramites_all_cache_mem = {"ts": datetime.now(), "data": data}
+        print(f"[cache] tramites_all: {len(data)} registros cargados desde disco ({age_h:.1f} h)")
+        if age_h > _CACHE_STALE_HOURS:
+            print("[cache] tramites_all: datos viejos, refrescando en background…")
+            Thread(target=_refresh_tramites_all, daemon=True).start()
+    else:
+        print("[cache] tramites_all: sin caché en disco — usando portada_historico como fallback")
+        Thread(target=_refresh_tramites_all, daemon=True).start()
+
+    data, age_h = _load_disk_cache("procesos")
+    if data is not None:
+        _procesos_cache_mem = {"ts": datetime.now(), "data": data}
+        print(f"[cache] procesos: {len(data)} registros cargados desde disco ({age_h:.1f} h)")
+        if age_h > 1:
+            Thread(target=_refresh_procesos, daemon=True).start()
+    else:
+        Thread(target=_refresh_procesos, daemon=True).start()
+
+
+_init_disk_caches()
+
+
+@app.route("/api/cache/refresh", methods=["POST"])
+def api_cache_refresh():
+    """Fuerza la regeneración de los caches históricos (sin bloquear)."""
+    global _compliance_cache, _portada_historico_cache, _tramites_all_cache_mem, _procesos_cache_mem
+    _compliance_cache        = {"ts": None, "data": None, "revisados": 0}
+    _portada_historico_cache = {"ts": None, "data": None}
+    _tramites_all_cache_mem  = {"ts": None, "data": None}
+    _procesos_cache_mem      = {"ts": None, "data": None}
+    Thread(target=_fetch_compliance_data,        daemon=True).start()
+    Thread(target=_fetch_portada_historico_data, daemon=True).start()
+    Thread(target=_refresh_tramites_all,         daemon=True).start()
+    Thread(target=_refresh_procesos,             daemon=True).start()
+    return jsonify({"ok": True, "msg": "Regeneración en background iniciada."})
+
+
+@app.route("/api/translate", methods=["POST"])
+def api_translate():
+    """Traduce texto EN→ES usando MyMemory (API gratuita, sin auth)."""
+    texto = (request.json or {}).get("text", "").strip()
+    if not texto:
+        return jsonify({"ok": True, "traduccion": texto})
+    try:
+        resp = requests.get(
+            "https://api.mymemory.translated.net/get",
+            params={"q": texto, "langpair": "en|es", "de": "ignacio.diaz@conaf.cl"},
+            timeout=6,
+        )
+        data = resp.json()
+        traduccion = data.get("responseData", {}).get("translatedText", texto)
+        return jsonify({"ok": True, "traduccion": traduccion})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc), "traduccion": texto})
 
 
 if __name__ == "__main__":

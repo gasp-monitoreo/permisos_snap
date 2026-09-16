@@ -1,25 +1,61 @@
 services:
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       cerofilas
+      POSTGRES_USER:     cerofilas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cerofilas_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cerofilas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   app:
     build: .
     image: permisos-snap:latest
-    container_name: permisos_snap
     restart: unless-stopped
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
     environment:
-      - CEROFILAS_API_BASE=${CEROFILAS_API_BASE:-https://conaf.cerofilas.gob.cl/backend/api}
-      - GMAIL_REDIRECT_URI=${GMAIL_REDIRECT_URI:-http://localhost:8000/auth/gmail/callback}
+      DATABASE_URL:        postgresql://cerofilas:${POSTGRES_PASSWORD:-cerofilas_secret}@db:5432/cerofilas
+      SECRET_KEY:          ${SECRET_KEY:-django-insecure-change-me}
+      CEROFILAS_TOKEN:     ${CEROFILAS_TOKEN:-GI1K0CaTKltnR9ziu60jBUKfsbNI13}
+      CEROFILAS_API_BASE:  ${CEROFILAS_API_BASE:-https://conaf.cerofilas.gob.cl/backend/api}
+      DJANGO_ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost}
+      GMAIL_REDIRECT_URI:  ${GMAIL_REDIRECT_URI:-http://localhost/auth/gmail/callback}
     volumes:
-      # Archivos entregados por investigadores (persisten fuera del container)
       - ./Investigaciones:/app/Investigaciones
-      # Credenciales Gmail OAuth (se crean al autorizar por primera vez)
-      - ./gmail_token.json:/app/gmail_token.json
-      - ./gmail_credentials.json:/app/gmail_credentials.json
+      - ./gmail_auth:/app/gmail_auth
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

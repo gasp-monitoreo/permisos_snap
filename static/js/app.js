@@ -14,10 +14,64 @@ const STATE = {
   charts: {},
   searchType: 'id',
   investigaciones: {},
+  duplicados: new Map(),
+  complianceData: [],        // Permisos históricos (>3 años) para matching de carpetas
+  portadaHistorico: [],      // TODOS los permisos de inv+film para los gráficos de Portada
+  fromCache: false,
+  dashFilter: 'all',         // 'all' | 'inv' | 'film'
 };
 
 // ─── Investigaciones helpers ──────────────────────────────────────────────────
 const _normInv = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
+
+// ─── Detección de duplicados regionales ───────────────────────────────────────
+// Los permisos se otorgan por 12 meses. Si un nuevo permiso para el mismo
+// proyecto se solicita con más de VENTANA_EXTENSION_DIAS de diferencia respecto
+// al anterior, se considera extensión legítima, no duplicado.
+const VENTANA_EXTENSION_DIAS = 240; // 8 meses — mayor gap = extensión del permiso
+
+function _tituloTramite(t) {
+  const d = t.datos_raw || {};
+  return d.titulo_investigacion || d.titulo_de_la_investigacion ||
+         d.titulo_proyecto || d.titulo_del_proyecto ||
+         d.nombre_de_la_investigacion || d.nombre_investigacion ||
+         d.nombre_del_proyecto || d.nombre_proyecto || d.titulo ||
+         t.titulo_investigacion || ''; // fallback para objetos del endpoint compliance
+}
+
+function detectarDuplicadosRegionales(tramites) {
+  const grupos = new Map();
+  for (const t of tramites) {
+    if (t.estado === 'rechazado' || t.borrador) continue;
+    const email = _normInv(t.email_solicitante || '');
+    if (!email) continue;
+    const titulo = _normInv(_tituloTramite(t));
+    const key = titulo.length >= 5
+      ? `${email}§${titulo}`
+      : `${email}§${grupoDeProcesoId ? grupoDeProcesoId(t.proceso_id) : t.proceso_id}`;
+    if (!grupos.has(key)) grupos.set(key, []);
+    grupos.get(key).push(t);
+  }
+
+  const resultado = new Map();
+  for (const grupo of grupos.values()) {
+    if (grupo.length < 2) continue;
+    for (const t of grupo) {
+      const fechaT = t.fecha_inicio ? new Date(t.fecha_inicio) : null;
+      const cercanos = grupo.filter(o => {
+        if (o.id === t.id) return false;
+        const fechaO = o.fecha_inicio ? new Date(o.fecha_inicio) : null;
+        if (!fechaT || !fechaO) return false;
+        const diffDias = Math.abs(fechaT - fechaO) / (1000 * 60 * 60 * 24);
+        return diffDias <= VENTANA_EXTENSION_DIAS;
+      });
+      if (cercanos.length > 0) {
+        resultado.set(t.id, cercanos);
+      }
+    }
+  }
+  return resultado;
+}
 
 function getArchivosTramite(tramiteId, nombre) {
   const idStr = String(tramiteId || '');
@@ -320,22 +374,36 @@ function humanizarRegion(raw) {
     items = sv.split(',').map(s => s.trim());
   }
 
+  // Si el valor parece un nombre de área protegida, no es una región
+  if (/parque|reserva|monumento|santuario|bernardo/i.test(sv)) return null;
+
+  // Alias para grafías no estándar usadas en campos de CeroFilas
+  const _REGION_ALIAS = { 'aisen': 'XI', 'aysen': 'XI' };
+
   const norms = items
     .filter(p => p && !_IGNORAR_VAL.test(p))
     .map(p => {
       // Código romano exacto
       const hit = REGIONES_CHILE.find(r => r.codigo === p.toUpperCase());
       if (hit) return hit.nombre;
-      // Slug o nombre parcial
-      const pn = p.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_\-\s]/g, '');
+      // Slug normalizado
+      const pn = p.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_\-\s']/g, '');
+      // Alias explícitos (ej: aisen → Aysén)
+      for (const [alias, cod] of Object.entries(_REGION_ALIAS)) {
+        if (pn.startsWith(alias)) {
+          const r = REGIONES_CHILE.find(r => r.codigo === cod);
+          if (r) return r.nombre;
+        }
+      }
+      // Slug o nombre parcial (lógica original preservada)
       const hit2 = REGIONES_CHILE.find(r => {
         const rn = r.nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[\s']/g, '');
         return rn === pn || rn.includes(pn) || pn.includes(rn.split(' ')[0]);
       });
       if (hit2) return hit2.nombre;
-      return null;  // Valor no reconocido como región → descartar
+      return null;
     })
-    .filter(Boolean);  // eliminar nulls
+    .filter(Boolean);
 
   return norms.length ? norms.join(', ') : null;
 }
@@ -404,6 +472,7 @@ async function loadProcesos() {
     const proc = p.proceso || p;
     STATE.procesoMap[proc.id] = proc.nombre;
   });
+  if (data.from_cache) STATE.fromCache = true;
   return STATE.procesos;
 }
 
@@ -412,7 +481,25 @@ async function loadTramites(params = {}) {
   Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
   const data = await fetchJSON(`/api/tramites?${qs}`);
   if (!data.ok) throw new Error(data.error);
+  if (data.from_cache) STATE.fromCache = true;
   return data.data || [];
+}
+
+function showCacheBanner(source) {
+  let banner = document.getElementById('cache-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'cache-banner';
+    banner.style.cssText = [
+      'position:fixed', 'bottom:16px', 'left:50%', 'transform:translateX(-50%)',
+      'background:#92400e', 'color:#fef3c7', 'padding:10px 20px', 'border-radius:8px',
+      'font-size:13px', 'font-weight:600', 'z-index:9999',
+      'box-shadow:0 4px 12px rgba(0,0,0,.3)', 'display:flex', 'align-items:center', 'gap:10px',
+    ].join(';');
+    document.body.appendChild(banner);
+  }
+  const label = source === 'portada_historico' ? 'datos históricos parciales' : 'caché guardado';
+  banner.innerHTML = `⚠️ Sin conexión a CeroFilas — mostrando ${label} <button onclick="this.parentElement.remove()" style="background:none;border:none;color:inherit;cursor:pointer;font-size:16px;line-height:1">✕</button>`;
 }
 
 async function loadTramite(id) {
@@ -459,6 +546,7 @@ function filtrarRango(lista) {
 // ─── Inicialización ───────────────────────────────────────────────────────────
 
 async function init() {
+  STATE.fromCache = false;
   showLoading('Cargando procesos…');
   try {
     // Procesos: no fatal — si falla, los selectores quedan vacíos pero continúa
@@ -474,14 +562,26 @@ async function init() {
     const { desde, hasta } = rangoActual();
     showLoading(`Descargando trámites (${desde}–${hasta})…`);
     let cargado = false;
+    let cacheSource = null;
+    let circuitOpen = false;
     try {
-      STATE.tramites = filtrarRango(await loadTramites(paramsRango()));
+      const qs = new URLSearchParams();
+      Object.entries(paramsRango()).forEach(([k, v]) => { if (v) qs.set(k, v); });
+      const resp = await fetchJSON(`/api/tramites?${qs}`);
+      if (!resp.ok) throw new Error(resp.error);
+      if (resp.from_cache) { STATE.fromCache = true; cacheSource = resp.cache_source; }
+      if (resp.circuit_open) circuitOpen = true;
+      STATE.tramites = filtrarRango(resp.data || []);
       cargado = true;
     } catch {
       // Reintento sin filtro de rango
       try {
         showLoading('Reintentando sin filtro de fechas…');
-        STATE.tramites = filtrarRango(await loadTramites());
+        const resp2 = await fetchJSON('/api/tramites');
+        if (!resp2.ok) throw new Error(resp2.error);
+        if (resp2.from_cache) { STATE.fromCache = true; cacheSource = resp2.cache_source; }
+        if (resp2.circuit_open) circuitOpen = true;
+        STATE.tramites = filtrarRango(resp2.data || []);
         cargado = true;
       } catch (e2) {
         console.error('No se pudieron cargar los trámites:', e2.message);
@@ -497,10 +597,15 @@ async function init() {
     }
 
     STATE.tramitesFiltrados = [...STATE.tramites];
+    STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
     updateLastUpdate();
     renderDashboard();
+    renderPortada();
     renderTramitesTable(STATE.tramitesFiltrados);
     populateRegionSelect();
+
+    // Mostrar banner solo si la API está caída o si servimos datos parciales (portada_historico)
+    if (circuitOpen || cacheSource === 'portada_historico') showCacheBanner(cacheSource);
   } catch (err) {
     alert('Error inesperado al cargar datos: ' + err.message);
   } finally {
@@ -569,33 +674,712 @@ function populateRegionSelect() {
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function renderDashboard() {
-  const ts = STATE.tramites;
-  const total = ts.length;
+function _statsFor(ts) {
+  const total      = ts.length;
   const pendientes = ts.filter(t => t.estado === 'pendiente').length;
-  const completados = ts.filter(t => t.estado === 'completado').length;
+  const completados= ts.filter(t => t.estado === 'completado').length;
   const rechazados = ts.filter(t => t.estado === 'rechazado').length;
-  const avgAvance = total ? Math.round(ts.reduce((s, t) => s + t.porcentaje_avance, 0) / total) : 0;
+  const avgAvance  = total ? Math.round(ts.reduce((s,t) => s + t.porcentaje_avance, 0) / total) : 0;
+  const vencidos   = ts.filter(t => tramiteEsVencido(t)).length;
+  return { total, pendientes, completados, rechazados, avgAvance, vencidos };
+}
 
-  const vencidos = ts.filter(t => tramiteEsVencido(t)).length;
+function _setSplit(id, inv, film) {
+  const el = $(id);
+  if (!el) return;
+  if (STATE.dashFilter !== 'all') { el.innerHTML = ''; return; }
+  el.innerHTML =
+    `<span class="kpi-split-inv">🔬 ${inv}</span>` +
+    `<span class="kpi-split-sep">·</span>` +
+    `<span class="kpi-split-film">🎬 ${film}</span>`;
+}
 
-  $('kpi-total').textContent = total;
-  $('kpi-pendiente').textContent = pendientes;
-  $('kpi-completado').textContent = completados;
-  $('kpi-rechazado').textContent = rechazados;
-  $('kpi-avance').textContent = avgAvance + '%';
-  $('kpi-vencidos').textContent = vencidos;
+function renderDashboard() {
+  const all  = STATE.tramites;
+  const invs = all.filter(t => IDS_INVESTIGACION.has(t.proceso_id));
+  const films= all.filter(t => IDS_FILMACION.has(t.proceso_id));
 
-  renderChartEstados({ pendientes, completados, rechazados });
-  renderChartProcesos();
-  renderChartAvance();
+  const f    = STATE.dashFilter;
+  const ts   = f === 'inv' ? invs : f === 'film' ? films : all;
+  const s    = _statsFor(ts);
+  const si   = _statsFor(invs);
+  const sf   = _statsFor(films);
+
+  $('kpi-total').textContent      = s.total;
+  $('kpi-pendiente').textContent  = s.pendientes;
+  $('kpi-completado').textContent = s.completados;
+  $('kpi-rechazado').textContent  = s.rechazados;
+  $('kpi-avance').textContent     = s.avgAvance + '%';
+  $('kpi-vencidos').textContent   = s.vencidos;
+
+  _setSplit('kpi-total-split',      si.total,      sf.total);
+  _setSplit('kpi-pendiente-split',  si.pendientes,  sf.pendientes);
+  _setSplit('kpi-completado-split', si.completados, sf.completados);
+  _setSplit('kpi-rechazado-split',  si.rechazados,  sf.rechazados);
+  _setSplit('kpi-avance-split',     si.avgAvance + '%', sf.avgAvance + '%');
+  _setSplit('kpi-vencidos-split',   si.vencidos,    sf.vencidos);
+
+  renderChartEstados(invs, films, ts, f);
+  renderChartProcesos(invs, films, ts, f);
+  renderChartAvance(invs, films, ts, f);
   renderTablaVencimientos();
   renderTablaRecientes();
   renderTiemposRespuesta();
+  renderDuplicadosSection();
 }
 
 const IDS_INVESTIGACION = new Set([517, 692, 1992]);
 const IDS_FILMACION     = new Set([437, 585, 631, 632, 672]);
+
+// ─── Taxonomía temática ───────────────────────────────────────────────────────
+// Orden importa: el primer match gana. Lo más específico va antes de lo general.
+const TEMAS_INV = [
+  // ── Aves (antes de Fauna Terrestre para no perder en el grupo general) ──────
+  { tema: 'Aves',
+    kw: ['ornitolog','avifauna','passeriforme','pelecaniforme','spheniscidae',
+         'pinguin','condor','flamenco','albatros','petrel','gaviotin','cauquen',
+         'quetru','rapaz','rapaces','halcon','aguila','buho','lechuza',
+         'nidificac','canto de ave','migracion de ave','ruta migratoria',
+         ' ave ',' aves ','parulidae','accipitridae','laridae','anatidae',
+         'pato ','patos ','garza','becada','becacina','churrete','tapaculo',
+         'picaflor','loro tricahue','cometocino','churrin','diuca'] },
+
+  // ── Mamíferos Marinos (antes de Ciencias del Mar) ──────────────────────────
+  { tema: 'Mamíferos Marinos',
+    kw: ['cetaceo','delfin','ballena','orca','lobo marino','lobo de mar',
+         'foca ','focas','otaria','pinnipedo','elefante marino','nutria de mar',
+         'chungungo','lontra felina','mamifero marino','mamiferos marinos'] },
+
+  // ── Herpetología (antes de Fauna Terrestre) ────────────────────────────────
+  { tema: 'Herpetología',
+    kw: ['herpeto','reptil ','reptiles','lagartija','lagarto','culebra',
+         'serpiente','anfibio','rana ','ranas ','sapo ','sapos ','salamandra',
+         'pleurodema','rhinella','liolaemus','callopistes','tachymenis',
+         'philodryas','alsodes','batrachyla'] },
+
+  // ── Ictiología / Peces ─────────────────────────────────────────────────────
+  { tema: 'Ictiología / Peces',
+    kw: ['ictio','pez ','peces ','trucha','salmon','salmones','pejerrey',
+         'lamprea','bacalao','merluza','corvina','puye','galaxia','galaxiid',
+         'percilia','trichomycterus','cheirodon','odontesthes','piscicola'] },
+
+  // ── Entomología / Invertebrados ────────────────────────────────────────────
+  { tema: 'Entomología / Invertebrados',
+    kw: ['entomolog','insecto','coleoptero','lepidoptero','diptera','himenoptero',
+         'polilla','mariposa','escarabajo','abeja','avispa','hormiga','mosca',
+         'mosquito','libelula','gorgojo','curculionidae','carabidae',
+         'aracnido','arana','escorpion','artropodo','crustaceo',
+         'invertebrado','molusco','gasteropodo','bivalvo','cefalopodo',
+         'equinodermo','erizo','estrella de mar','pepino de mar','anelido',
+         'lombriz','oligoqueto','nematodo'] },
+
+  // ── Micología / Líquenes / Briófitas ──────────────────────────────────────
+  { tema: 'Micología / Líquenes',
+    kw: ['hongo','hongos','micolog','micelio','espora','basidiomiceto',
+         'ascomiceto','macromiceto','ectomicorriza','micorriza','trufa',
+         'boletus','amanita','cortinarius','suillus','fungo',
+         'liquen','liquenes','liquenolog','cladonia','usnea','peltigera',
+         'briofit','briolog','hepatica','antocerota','musgo ','musgos ',
+         'esporofito','sphagnum'] },
+
+  // ── Botánica / Flora ───────────────────────────────────────────────────────
+  { tema: 'Botánica / Flora',
+    kw: ['botanic','florist','fitosociolog','dendrolog','fitoplancton','fitobentos',
+         'flora ','planta ','plantas ','vegeta','arbol','arboles','arbusto',
+         'matorral','hierba','herbaceo','pasto ','pastos ','bosque',
+         'alerce','cipres','coigue','lenga','nirre','notofagus','pino ',
+         'eucalipto','graminea','gramineas','bromelia','tillandsia',
+         'cactacea','suculenta','xerofit','turbera','pompon','sphagnum',
+         'fitomasa','cobertura vegetal','pradera','estepario','alga ',
+         'algas ','kelp','macroalga','fitoplancton'] },
+
+  // ── Ecología ───────────────────────────────────────────────────────────────
+  { tema: 'Ecología',
+    kw: ['ecolog','ecosistema','biodiversidad','abundancia','densidad poblac',
+         'dinamica poblac','comunidad biol','estructura de comunidad',
+         'cadena trófica','red trofica','nicho','habitat','interacciones',
+         'depredacion','competencia','mutualismo','parasitismo','simbiosis',
+         'trofico','productividad primaria','biomasa','riqueza de especi',
+         'diversidad alfa','diversidad beta','indice de diversidad'] },
+
+  // ── Genética / Genómica ────────────────────────────────────────────────────
+  { tema: 'Genética / Genómica',
+    kw: ['genetic','genoma','genomic','filogeni','filogeograf','molecular',
+         'adn ','dna ','microsatelit','haplotip','secuencia','genotip',
+         'fenotip','transcriptoma','proteoma','bioinformatic','pcr ',
+         'marcador molecular','divergencia genetica','flujo genico',
+         'estructura genetica','variacion genetica','snp '] },
+
+  // ── Arqueología / Patrimonio ───────────────────────────────────────────────
+  { tema: 'Arqueología / Patrimonio',
+    kw: ['arqueolog','patrimoni','prehispan','rupestre','petroglifo',
+         'alfareria','ceramica','sitio arqueol','conchale','tmidero',
+         'etnoarqueolog','paleoindio','cazador recolector','arte rupestre',
+         'pinturas rupestres','mortero','lithico','litico','fauna arqueol',
+         'carbono 14','datacion','excavacion','prospeccio'] },
+
+  // ── Glaciología / Criosfera ────────────────────────────────────────────────
+  { tema: 'Glaciología / Criosfera',
+    kw: ['glaciar','glaciolog','glaciares','criosfera','hielo ','campo de hielo',
+         'permafrost','periglacial','nieve ','nevado','deshielo','retroceso glaciar',
+         'masa de hielo','lengua glaciar','frente glaciar','balance de masa'] },
+
+  // ── Recursos Hídricos / Limnología ────────────────────────────────────────
+  { tema: 'Recursos Hídricos / Limnología',
+    kw: ['limnolog','hidrologi','cuenca hidro','caudal','calidad del agua',
+         'aguas continen','lago ','lagos ','laguna ','lagunas ','rio ','rios ',
+         'arroyo','estero','humedal','turbera','fitoplancton lacustre',
+         'zooplancton','macroinvertebrado acuat','peces de agua dulce',
+         'acuifer','aguas subterraneas','riego','escorrentia'] },
+
+  // ── Clima / Meteorología ──────────────────────────────────────────────────
+  { tema: 'Clima / Meteorología',
+    kw: ['clima ','climatolog','cambio climatico','temperatura ','precipitacion',
+         'meteo','fenologia','estacion climatica','patron climatico',
+         'radiacion solar','viento ','presion atmosfer','humedad relativa',
+         'sequia','ola de calor','evento extremo','enso','el nino','la nina',
+         'variabilidad climatica','microclima'] },
+
+  // ── Geografía / Geología / Suelos ─────────────────────────────────────────
+  { tema: 'Geografía / Geología',
+    kw: ['geografi','geomorfolog','geolog','pedolog','edafolog',
+         'suelo ','suelos ','sediment','erosion','relieve','litolog',
+         'tectonica','volcan','vulcanolog','sismolog','terremoto',
+         'paisaje','cartografi','sig ','gis ','teledeteccion','sensores remotos',
+         'fotointerpretacion','topografi','altimetria','batimetria'] },
+
+  // ── Ciencias del Mar / Oceanografía ───────────────────────────────────────
+  { tema: 'Ciencias del Mar',
+    kw: ['oceanograf','plancton','zooplancton marino','fitoplancton marino',
+         'intermareal','submareal','bentos','bentico','macrobentos',
+         'litoral','costa ','costas ','playa ','playas ','fiordo',
+         'marino ','marina ','marinos ','marinas ','algas marinas',
+         'kelp','huiro','luga','submarino','buceo'] },
+
+  // ── Monitoreo Ambiental ────────────────────────────────────────────────────
+  { tema: 'Monitoreo Ambiental',
+    kw: ['monitoreo','contaminac','microplastico','metal pesado','mercurio',
+         'plomo ','arsenico','residuo','basura','impacto ambiental',
+         'evaluacion ambiental','linea base','presencia humana',
+         'perturbacion','fragmentacion','deforestacion'] },
+
+  // ── Turismo / Uso Público ─────────────────────────────────────────────────
+  { tema: 'Turismo / Uso Público',
+    kw: ['turismo','turista','visitante','recreacion','uso publico',
+         'capacidad de carga','carga visit','gestion de visit',
+         'sendero','senderismo','trekking','camping','impacto del turismo',
+         'interpretacion ambiental','educacion ambiental','percepcion',
+         'satisfaccion del visit','voluntariado'] },
+
+  // ── Manejo y Conservación ─────────────────────────────────────────────────
+  { tema: 'Manejo y Conservación',
+    kw: ['conservacion','manejo','especie amenazada','en peligro',
+         'vulnerable','lista roja','categoria de amenaza',
+         'reintroducc','repoblacion','restauracion ecolog','revegetacion',
+         'control de especie invasora','especie invasora','especie exotica',
+         'erradicacion','plan de manejo','corredor biologico',
+         'area protegida','parque nacional','reserva'] },
+];
+
+const TEMAS_FILM = [
+  { tema: 'Documental de Naturaleza',
+    kw: ['naturaleza','wildlife','vida silvestre','documental','fauna silvestre',
+         'flora silvestre','avistamiento','ecosistema','biodiversidad',
+         'especie ','animal ','parque nacional','reserva natural'] },
+  { tema: 'Cine / Ficción',
+    kw: ['largometraje','cortometraje','ficcion','pelicula','drama','thriller',
+         'serie ','teleserie','guion','actores','rodaje','produccion cinemat',
+         'animacion','videoclip'] },
+  { tema: 'Publicidad / Comercial',
+    kw: ['publicidad','comercial','marca ','producto ','campana publicitar',
+         'spot ','aviso ','auspicio','marketing','promocion','branding'] },
+  { tema: 'Contenido Educativo',
+    kw: ['educativ','educacion','divulgacion','escolar','universitario',
+         'pedagogico','ciencia','museo','exposicion educativa','recurso didactico',
+         'mediacion','taller','capacitacion'] },
+  { tema: 'Fotografía',
+    kw: ['fotografi','fotografo','retrato','galeria','libro fotografi',
+         'exposicion fotografica','fotoperiodismo','foto ','fotos ','imagen ',
+         'paisaje fotografi','wildlife photo'] },
+  { tema: 'Reportaje / Periodismo',
+    kw: ['reportaje','periodismo','noticias','prensa','diario','revista',
+         'entrevista','nota period','cobertura period','medio de comunicacion',
+         'television','radio ','podcast'] },
+  { tema: 'Contenido Digital / RRSS',
+    kw: ['redes sociales','instagram','youtube','tiktok','contenido digital',
+         'influencer','streaming','vlog','video digital','plataforma digital',
+         'contenido audiovisual','short film','reels'] },
+];
+
+const PALETA_TEMAS = [
+  '#1B5E20','#1565C0','#E65100','#6A1B9A','#B71C1C',
+  '#00695C','#558B2F','#4527A0','#AD1457','#37474F',
+  '#F57F17','#0277BD','#4E342E','#00838F','#283593',
+  '#EF6C00','#2E7D32','#880E4F','#004D40','#E65100',
+  '#1A237E','#BF360C','#33691E','#4A148C','#006064',
+];
+
+function clasificarTramite(t) {
+  const d = t.datos_raw || {};
+  // Rodear con espacios para que ' ave ' no matchee "avena" al inicio/fin
+  const texto = ' ' + _normInv([
+    _tituloTramite(t),
+    t.titulo_investigacion,                  // compliance / portadaHistorico
+    t.texto_clasificacion,                   // campo pre-agregado de portadaHistorico
+    d.objetivos_del_proyecto,
+    d.descripcion,
+    d.descripcion_proyecto,
+    d.segmentos_proyecto,
+    d.objetivo_general,
+    d.objetivos_especificos,
+    d.actividades,
+    d.actividades_a_realizar,
+    d.palabras_clave,
+    d.especie,
+    d.especies,
+    d.nombre_cientifico,
+    d.nombre_comun,
+    d.tipo_investigacion,
+    d.linea_investigacion,
+  ].filter(Boolean).join(' ')) + ' ';
+  const esInv = IDS_INVESTIGACION.has(t.proceso_id);
+  const lista = esInv ? TEMAS_INV : TEMAS_FILM;
+  for (const { tema, kw } of lista) {
+    if (kw.some(k => texto.includes(k))) return tema;
+  }
+  return 'Otros';
+}
+
+// Jerarquía de consolidación: si un tema tiene pocos items, se fusiona con su padre
+const TEMA_PADRE = {
+  'Herpetología':                  'Fauna Terrestre',
+  'Mamíferos Marinos':             'Fauna Terrestre',
+  'Entomología / Invertebrados':   'Fauna Terrestre',
+  'Ictiología / Peces':            'Fauna Terrestre',
+  'Micología / Líquenes':          'Botánica / Flora',
+  'Clima / Meteorología':          'Monitoreo Ambiental',
+  'Turismo / Uso Público':         'Manejo y Conservación',
+  'Recursos Hídricos / Limnología':'Ecología',
+  'Geografía / Geología':          'Ecología',
+};
+
+function consolidarTemasPequenos(porTema, minItems) {
+  const result = new Map(porTema);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [tema, items] of [...result.entries()]) {
+      if (items.length < minItems && TEMA_PADRE[tema]) {
+        const padre = TEMA_PADRE[tema];
+        if (!result.has(padre)) result.set(padre, []);
+        result.get(padre).push(...items);
+        result.delete(tema);
+        changed = true;
+        break; // reiniciar iteración tras modificar el mapa
+      }
+    }
+  }
+  return result;
+}
+
+function agruparPorTema(tramites, temas) {
+  const map = new Map();
+  for (const { tema } of temas) map.set(tema, []);
+  map.set('Otros', []);
+  for (const t of tramites) {
+    const tema = clasificarTramite(t);
+    if (!map.has(tema)) map.get('Otros').push(t);
+    else map.get(tema).push(t);
+  }
+  return new Map(
+    [...map.entries()]
+      .filter(([, v]) => v.length > 0)
+      .sort((a, b) => b[1].length - a[1].length)
+  );
+}
+
+function archivosDeFolder(data) {
+  if (data.tipo === 'flat') return data.archivos || [];
+  return Object.values(data.ids || {}).flat();
+}
+
+function getTramitePorCarpeta(folderName) {
+  const tokens = _normInv(folderName.replace(/_/g, ' ')).split(' ').filter(Boolean);
+  if (!tokens.length) return null;
+  const match = lista => lista.find(t => {
+    const n = _normInv(t.nombre_solicitante || '');
+    return tokens.every(tok => n.includes(tok));
+  });
+  // Busca primero en trámites recientes, luego en historial compliance (>3 años)
+  return match(STATE.tramites) || match(STATE.complianceData) || null;
+}
+
+// ─── PORTADA ─────────────────────────────────────────────────────────────────
+function clasificarDesdeArchivos(archivos) {
+  const texto = _normInv(archivos.map(a => a.nombre).join(' '));
+  for (const { tema, kw } of TEMAS_INV) {
+    if (kw.some(k => texto.includes(k))) return tema;
+  }
+  return 'Otros';
+}
+
+async function loadPortadaHistorico() {
+  if (STATE.portadaHistorico.length > 0) return;
+  try {
+    const data = await fetchJSON('/api/portada/historico');
+    if (data.ok) STATE.portadaHistorico = data.data || [];
+  } catch(e) {
+    console.warn('No se pudo cargar histórico de portada:', e.message);
+  }
+}
+
+async function loadComplianceData() {
+  if (STATE.complianceData.length > 0) return;
+  const el = $('portada-tabla-entregadas');
+  if (el) el.innerHTML = `<div class="empty-msg" style="padding:24px;text-align:center">
+    <div style="font-size:22px;margin-bottom:8px">⏳</div>
+    Cargando historial de investigaciones entregadas…<br>
+    <small style="color:var(--muted)">Puede tardar 1–2 minutos la primera vez.</small>
+  </div>`;
+  try {
+    const data = await fetchJSON('/api/compliance/investigacion');
+    if (data.ok) STATE.complianceData = data.data || [];
+  } catch(e) {
+    console.warn('No se pudo cargar compliance data:', e.message);
+  }
+}
+
+async function renderPortada() {
+  // Mostrar loading en gráficos mientras carga el histórico
+  const loadingChart = id => {
+    const c = $(id);
+    if (c) { const ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); }
+  };
+
+  // Cargar histórico de gráficos y compliance en paralelo
+  const [, ] = await Promise.all([
+    loadPortadaHistorico(),
+    loadComplianceData(),
+  ]);
+
+  // Gráficos usan TODOS los permisos históricos aprobados (no rechazados, no borrador)
+  const hist  = STATE.portadaHistorico.filter(t => t.estado !== 'rechazado');
+  const invs  = hist.filter(t => IDS_INVESTIGACION.has(t.proceso_id));
+  const films = hist.filter(t => IDS_FILMACION.has(t.proceso_id));
+
+  renderChartTematico('chart-temas-inv',  agruparPorTema(invs,  TEMAS_INV),  'temasInv');
+  renderChartTematico('chart-temas-film', agruparPorTema(films, TEMAS_FILM), 'temasFilm');
+
+  // Tabla: solo carpetas con archivos entregados (usa compliance para matching histórico)
+  renderTablaEntregadas();
+}
+
+function renderChartTematico(canvasId, porTema, chartKey) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  if (STATE.charts[chartKey]) STATE.charts[chartKey].destroy();
+
+  const labels = [...porTema.keys()];
+  const datos  = labels.map(k => porTema.get(k).length);
+  const total  = datos.reduce((a, b) => a + b, 0);
+
+  // Ajustar altura del canvas según número de barras
+  canvas.style.height = Math.max(200, labels.length * 32) + 'px';
+
+  STATE.charts[chartKey] = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: datos,
+        backgroundColor: labels.map((_, i) => PALETA_TEMAS[i % PALETA_TEMAS.length]),
+        borderWidth: 0,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: {
+          label: c => ` ${c.raw} permisos (${Math.round(c.raw / (total||1) * 100)}%)`
+        }}
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: 'rgba(128,128,128,0.1)' } },
+        y: { ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+// ─── Formato de texto ────────────────────────────────────────────────────────
+
+const _PREP_ES = new Set([
+  'de','del','la','las','el','los','un','una','en','y','e','o','u',
+  'a','para','por','con','sin','sobre','entre','hacia','desde','hasta',
+  'ante','bajo','según','tras','via','the','of','and','in','to','for',
+  'with','on','at','by','from','an','as',
+]);
+
+function formatTitulo(titulo) {
+  if (!titulo || titulo === '–') return titulo;
+  const words = titulo.trim().split(/\s+/);
+  return words.map((w, i) => {
+    if (!w) return '';
+    // Preservar siglas/acrónimos: 2-7 letras mayúsculas (ADN, SNAP, CO2, etc.)
+    if (/^[A-ZÁÉÍÓÚÑÜ0-9]{2,7}$/.test(w) && /[A-ZÁÉÍÓÚÑÜ]{2}/.test(w)) return w;
+    const lo = w.toLowerCase();
+    if (i === 0) return lo.charAt(0).toUpperCase() + lo.slice(1);
+    if (_PREP_ES.has(lo)) return lo;
+    return lo.charAt(0).toUpperCase() + lo.slice(1);
+  }).join(' ');
+}
+
+function formatNombre(nombre) {
+  // Nombre propio: cada palabra capitalizada (Nombre Apellido)
+  return (nombre || '').trim().split(/\s+/).map(w => {
+    if (!w) return '';
+    if (/^[A-ZÁÉÍÓÚÑÜ]{2,}$/.test(w)) return w; // sigla
+    const lo = w.toLowerCase();
+    return lo.charAt(0).toUpperCase() + lo.slice(1);
+  }).join(' ');
+}
+
+// ─── Detección de inglés y traducción ────────────────────────────────────────
+
+const _EN_WORDS = new Set([
+  'the','of','and','in','a','to','for','with','on','at','by','from','an',
+  'study','assessment','evaluation','analysis','distribution','effects','impact',
+  'survey','monitoring','conservation','ecology','diversity','population',
+  'species','habitat','birds','mammals','plants','insects','fish','marine',
+  'forest','lake','river','island','national','park','reserve','spatial',
+  'temporal','genetic','molecular','breeding','nesting','migration','feeding',
+  'behavior','behaviour','abundance','richness','structure','community',
+]);
+
+function isLikelyEnglish(text) {
+  if (!text || text === '–') return false;
+  const words = text.toLowerCase().replace(/[^a-záéíóúñü\s]/g, '').split(/\s+/);
+  if (words.length < 3) return false;
+  const enCount = words.filter(w => _EN_WORDS.has(w)).length;
+  return enCount >= 2 || (enCount / words.length) >= 0.25;
+}
+
+const _tradCache = {}; // texto original → traducción
+
+async function _traducirTitulo(uid, textoOriginal) {
+  if (_tradCache[textoOriginal]) {
+    const el = document.getElementById(`trad-${uid}`);
+    if (el) el.textContent = _tradCache[textoOriginal];
+    return;
+  }
+  try {
+    const resp = await fetch('/api/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: textoOriginal }),
+    });
+    const data = await resp.json();
+    if (data.ok && data.traduccion !== textoOriginal) {
+      _tradCache[textoOriginal] = data.traduccion;
+      const el = document.getElementById(`trad-${uid}`);
+      if (el) el.textContent = data.traduccion;
+    } else {
+      const el = document.getElementById(`trad-${uid}`);
+      if (el) el.textContent = textoOriginal;
+    }
+  } catch(_) {}
+}
+
+window._traducirTitulo = _traducirTitulo;
+
+// ─── Muestras ─────────────────────────────────────────────────────────────────
+
+function _parseMuestras(tramite) {
+  if (!tramite) return null;
+  // compliance data devuelve campo directo
+  const v = tramite.colecta_muestras;
+  if (v !== undefined) {
+    const vl = String(v).toLowerCase().trim();
+    if (!vl || vl === 'none' || vl === 'nan' || vl === '–') return null;
+    const positivo = /^(s[íi]|yes|1|true|x|marca|si$)/.test(vl);
+    const negativo = /^(no|0|false|ninguna|no\s)/.test(vl);
+    if (positivo) return true;
+    if (negativo) return false;
+    return vl; // valor textual inesperado
+  }
+  // tramites recientes: buscar en datos_raw
+  const d = tramite.datos_raw || {};
+  const raw = d.colecta_de_muestras || d.colecta_muestras || d.recoleccion_muestras ||
+              d.muestras_biologicas || d.colecta_material_biologico || d.colecta ||
+              d.tipo_colecta || d.requiere_colecta || '';
+  if (!raw) return null;
+  const rl = String(raw).toLowerCase().trim();
+  if (!rl || rl === 'no aplica') return null;
+  const pos = /^(s[íi]|yes|1|true|x|se realizara|se realiz)/.test(rl);
+  const neg = /^(no|0|false|no\s|ninguna)/.test(rl);
+  if (pos) return true;
+  if (neg) return false;
+  return rl;
+}
+
+function muestrasBadge(tramite) {
+  const v = _parseMuestras(tramite);
+  if (v === null) return '<span style="color:var(--muted);font-size:11px">–</span>';
+  if (v === true) return '<span style="background:#E8F5E9;color:#1B5E20;border:1px solid #81C784;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">✓ Sí</span>';
+  if (v === false) return '<span style="background:#fafafa;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:2px 8px;font-size:11px">✗ No</span>';
+  return `<span title="${v}" style="background:#FFF8E1;color:#7D4E00;border:1px solid #FFB300;border-radius:10px;padding:2px 8px;font-size:11px">⚗ Sí</span>`;
+}
+
+// ─── Tabla de investigaciones entregadas ──────────────────────────────────────
+
+function renderTablaEntregadas(filtroTema) {
+  const el = $('portada-tabla-entregadas');
+  if (!el) return;
+  if (filtroTema === undefined) filtroTema = '';
+
+  // 1. Construir entradas con tema original
+  const entradas = [];
+  for (const [carpeta, data] of Object.entries(STATE.investigaciones)) {
+    const archivos = archivosDeFolder(data);
+    if (!archivos.length) continue;
+    const tramite = getTramitePorCarpeta(carpeta);
+    const tema    = tramite ? clasificarTramite(tramite) : clasificarDesdeArchivos(archivos);
+    const titulo  = tramite ? (_tituloTramite(tramite) || '–') : '–';
+    const regs    = tramite ? (tramite.regiones_list || []).join(', ') : '–';
+    const estado  = tramite ? tramite.estado : null;
+    const tid     = tramite ? tramite.id : null;
+    entradas.push({ carpeta, archivos, tramite, tema, titulo, regs, estado, tid });
+  }
+
+  // 2. Agrupar TODAS las entradas y consolidar (para obtener los temas canónicos)
+  let porTemaTotal = new Map();
+  for (const e of entradas) {
+    if (!porTemaTotal.has(e.tema)) porTemaTotal.set(e.tema, []);
+    porTemaTotal.get(e.tema).push(e);
+  }
+  porTemaTotal = consolidarTemasPequenos(porTemaTotal, 2);
+
+  // Construir mapa: tema original → tema canónico (post-consolidación)
+  const temaCanon = new Map();
+  for (const e of entradas) {
+    if (!temaCanon.has(e.tema)) {
+      for (const [canon, lista] of porTemaTotal.entries()) {
+        if (lista.includes(e)) { temaCanon.set(e.tema, canon); break; }
+      }
+    }
+  }
+  const temaEfectivo = e => temaCanon.get(e.tema) || e.tema;
+
+  // 3. Botones de filtro usando temas canónicos
+  const filtroEl = $('portada-filtro-tema');
+  if (filtroEl) {
+    const temasCanon = [...porTemaTotal.keys()].sort();
+    filtroEl.innerHTML = ['', ...temasCanon].map(t => {
+      const activo = t === filtroTema ? 'tema-filter-btn--active' : '';
+      const label  = t || 'Todos';
+      return `<button class="tema-filter-btn ${activo}" data-tema="${(t||'').replace(/"/g,'&quot;')}">${label}</button>`;
+    }).join('');
+    filtroEl.onclick = ev => {
+      const btn = ev.target.closest('.tema-filter-btn');
+      if (btn) renderTablaEntregadas(btn.dataset.tema);
+    };
+  }
+
+  // 4. Filtrar usando tema canónico
+  const filtradas = filtroTema
+    ? entradas.filter(e => temaEfectivo(e) === filtroTema)
+    : entradas;
+
+  if (!filtradas.length) {
+    el.innerHTML = '<div class="empty-msg">Sin investigaciones con archivos entregados</div>';
+    return;
+  }
+
+  // 5. Agrupar filtradas por tema canónico
+  let porTema = new Map();
+  for (const e of filtradas) {
+    const tc = temaEfectivo(e);
+    if (!porTema.has(tc)) porTema.set(tc, []);
+    porTema.get(tc).push(e);
+  }
+
+  let html = `<div style="padding:8px 16px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--border)">
+    ${filtradas.length} investigador${filtradas.length!==1?'es':''} con archivos entregados
+  </div>`;
+
+  const pendientesTraduccion = [];
+
+  for (const [tema, lista] of [...porTema.entries()].sort((a,b)=>a[0].localeCompare(b[0]))) {
+    const filas = lista.sort((a,b)=>a.carpeta.localeCompare(b.carpeta)).map((e, idx) => {
+      const nombre = formatNombre(e.carpeta.replace(/_/g,' '));
+
+      const archivoLinks = e.archivos.map(a =>
+        `<a href="${a.url}" target="_blank" class="entregadas-archivo-link">📄 ${a.nombre}<small style="color:var(--muted);margin-left:4px">${a.size_kb} KB</small></a>`
+      ).join('');
+
+      const estadoCell = e.tramite
+        ? badgeHtml(e.estado, {})
+        : '<span style="color:var(--muted);font-size:11px">–</span>';
+
+      const idCell = e.tid
+        ? `<button class="btn-detalle" onclick="openModal(${e.tid})" style="font-size:11px;padding:3px 8px">#${e.tid}</button>`
+        : '<span style="color:var(--muted);font-size:11px">–</span>';
+
+      // Título formateado + detección inglés
+      const tituloFmt = formatTitulo(e.titulo);
+      const enIngles  = isLikelyEnglish(e.titulo);
+      const uid       = `${tema.replace(/\W/g,'')}_${idx}`;
+      let tituloHtml;
+      if (enIngles) {
+        pendientesTraduccion.push({ uid, texto: e.titulo });
+        tituloHtml = `<span id="trad-${uid}" title="Traduciendo…">${tituloFmt}</span>
+          <span style="font-size:10px;color:var(--muted);margin-left:4px">[EN]</span>`;
+      } else {
+        tituloHtml = `<span>${tituloFmt}</span>`;
+      }
+
+      const muestrasCell = muestrasBadge(e.tramite);
+
+      return `<tr>
+        <td style="font-weight:600;white-space:nowrap;font-size:13px">${nombre}</td>
+        <td>${idCell}</td>
+        <td style="font-size:12px;max-width:240px">${tituloHtml}</td>
+        <td style="text-align:center">${muestrasCell}</td>
+        <td>${archivoLinks}</td>
+        <td style="font-size:12px;color:var(--muted)">${e.regs || '–'}</td>
+        <td>${estadoCell}</td>
+      </tr>`;
+    }).join('');
+
+    html += `
+      <div style="padding:8px 16px;font-weight:700;font-size:13px;background:var(--surface2);border-top:2px solid var(--border)">
+        🏷️ ${tema} <span style="font-weight:400;color:var(--muted)">(${lista.length})</span>
+      </div>
+      <table>
+        <thead><tr>
+          <th style="color:#fff">Investigador</th>
+          <th style="color:#fff">ID permiso</th>
+          <th style="color:#fff">Proyecto</th>
+          <th style="color:#fff;text-align:center">Muestras</th>
+          <th style="color:#fff">Archivos</th>
+          <th style="color:#fff">Regiones</th>
+          <th style="color:#fff">Estado</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>`;
+  }
+
+  el.innerHTML = html;
+
+  // Traducir títulos en inglés en background (sin bloquear el render)
+  for (const { uid, texto } of pendientesTraduccion) {
+    _traducirTitulo(uid, texto);
+  }
+}
 
 function calcularDias(t) {
   const inicio = t.fecha_inicio;
@@ -658,47 +1442,80 @@ function renderTiemposRespuesta() {
     </div>`;
 }
 
-function renderChartEstados({ pendientes, completados, rechazados }) {
-  const ctx = $('chart-estados').getContext('2d');
-  if (STATE.charts.estados) STATE.charts.estados.destroy();
-  STATE.charts.estados = new Chart(ctx, {
+function _makeDoughnut(canvasId, data, colors, key) {
+  const ctx = $(canvasId).getContext('2d');
+  if (STATE.charts[key]) STATE.charts[key].destroy();
+  STATE.charts[key] = new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels: ['Pendientes', 'Completados', 'Rechazados'],
-      datasets: [{
-        data: [pendientes, completados, rechazados],
-        backgroundColor: ['#FFC107', '#28A745', '#DC3545'],
-        borderWidth: 2,
-        borderColor: '#fff',
-      }]
+      datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: 'var(--surface, #fff)' }]
     },
     options: {
       responsive: true,
       plugins: {
-        legend: { position: 'bottom', labels: { padding: 16, font: { size: 12 } } },
+        legend: { position: 'bottom', labels: { padding: 10, font: { size: 11 } } },
         tooltip: { callbacks: {
-          label: ctx => ` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw / (ctx.dataset.data.reduce((a,b)=>a+b,0)||1) * 100)}%)`
+          label: c => ` ${c.label}: ${c.raw} (${Math.round(c.raw / (c.dataset.data.reduce((a,b)=>a+b,0)||1)*100)}%)`
         }}
       }
     }
   });
 }
 
-function renderChartProcesos() {
-  const ctx = $('chart-procesos').getContext('2d');
-  if (STATE.charts.procesos) STATE.charts.procesos.destroy();
-
-  // Contar tramites por región y estado — un tramite puede contar en varias regiones
-  const byRegion = {};
-  REGIONES_CHILE.forEach(r => {
-    byRegion[r.nombre] = { pendiente: 0, completado: 0, rechazado: 0 };
+function renderChartEstados(invs, films, ts, f) {
+  const g = arr => ({
+    p: arr.filter(t => t.estado==='pendiente').length,
+    c: arr.filter(t => t.estado==='completado').length,
+    r: arr.filter(t => t.estado==='rechazado').length,
   });
 
-  STATE.tramites.forEach(t => {
-    const regs = (t.regiones_list || []);
-    // Normalizar nombres para hacer match con REGIONES_CHILE
+  const container = $('chart-estados-container');
+  if (f === 'all') {
+    container.style.display = 'flex';
+    const si = g(invs), sf = g(films);
+    _makeDoughnut('chart-estados-inv',  [si.p, si.c, si.r], ['#F59E0B','#10B981','#EF4444'], 'estadosInv');
+    _makeDoughnut('chart-estados-film', [sf.p, sf.c, sf.r], ['#FBBF24','#059669','#DC2626'], 'estadosFilm');
+    if (STATE.charts.estados) { STATE.charts.estados.destroy(); STATE.charts.estados = null; }
+  } else {
+    // Ocultar uno de los dos según filtro, mostrar solo un donut centralizado
+    container.style.display = 'flex';
+    const src = f === 'inv' ? invs : films;
+    const { p, c, r } = g(src);
+    const colors = f === 'inv'
+      ? ['#F59E0B','#10B981','#EF4444']
+      : ['#FBBF24','#059669','#DC2626'];
+    // Destruir ambos y recrear solo el relevante en el canvas inv (más amplio)
+    if (STATE.charts.estadosInv)  { STATE.charts.estadosInv.destroy();  STATE.charts.estadosInv  = null; }
+    if (STATE.charts.estadosFilm) { STATE.charts.estadosFilm.destroy(); STATE.charts.estadosFilm = null; }
+    if (STATE.charts.estados)     { STATE.charts.estados.destroy();     STATE.charts.estados     = null; }
+    // Usar un canvas temporal para vista completa
+    const targetId = f === 'inv' ? 'chart-estados-inv' : 'chart-estados-film';
+    _makeDoughnut(targetId, [p, c, r], colors, 'estados');
+    // Ocultar el otro sub-canvas vaciándolo
+    const otherId = f === 'inv' ? 'chart-estados-film' : 'chart-estados-inv';
+    const otherCtx = $(otherId).getContext('2d');
+    otherCtx.clearRect(0, 0, $(otherId).width, $(otherId).height);
+    // Ocultar la etiqueta del otro
+    const labels = container.querySelectorAll('div[style*="font-size:11px"]');
+    labels.forEach((lbl, i) => {
+      if (f === 'inv') lbl.style.opacity = i === 0 ? '1' : '0.2';
+      else             lbl.style.opacity = i === 1 ? '1' : '0.2';
+    });
+  }
+  // Restablecer opacidad cuando es 'all'
+  if (f === 'all') {
+    const labels = container.querySelectorAll('div[style*="font-size:11px"]');
+    labels.forEach(lbl => lbl.style.opacity = '1');
+  }
+}
+
+function _countByRegion(tramites) {
+  const byRegion = {};
+  REGIONES_CHILE.forEach(r => { byRegion[r.nombre] = { pendiente:0, completado:0, rechazado:0 }; });
+  tramites.forEach(t => {
     const matched = new Set();
-    regs.forEach(raw => {
+    (t.regiones_list || []).forEach(raw => {
       const hit = REGIONES_CHILE.find(r =>
         r.nombre.toLowerCase() === raw.toLowerCase() ||
         raw.toLowerCase().includes(r.nombre.toLowerCase().split(' ')[0].toLowerCase())
@@ -707,68 +1524,70 @@ function renderChartProcesos() {
     });
     matched.forEach(nombre => {
       if (!byRegion[nombre]) return;
-      const est = t.estado === 'rechazado' ? 'rechazado'
-                : t.estado === 'completado' ? 'completado'
-                : 'pendiente';
+      const est = t.estado === 'rechazado' ? 'rechazado' : t.estado === 'completado' ? 'completado' : 'pendiente';
       byRegion[nombre][est]++;
     });
   });
+  return byRegion;
+}
 
-  // Solo regiones con al menos 1 tramite, en orden N→S
-  const labels = REGIONES_CHILE.map(r => r.nombre).filter(n =>
-    byRegion[n] && (byRegion[n].pendiente + byRegion[n].completado + byRegion[n].rechazado) > 0
-  );
+function renderChartProcesos(invs, films, ts, f) {
+  const ctx = $('chart-procesos').getContext('2d');
+  if (STATE.charts.procesos) STATE.charts.procesos.destroy();
+
+  let datasets, labels;
+
+  if (f === 'all') {
+    // Modo combinado: dos grupos por región (🔬 inv, 🎬 film) usando colores distintos
+    const bi = _countByRegion(invs);
+    const bf = _countByRegion(films);
+    labels = REGIONES_CHILE.map(r => r.nombre).filter(n =>
+      (bi[n] && (bi[n].pendiente+bi[n].completado+bi[n].rechazado)>0) ||
+      (bf[n] && (bf[n].pendiente+bf[n].completado+bf[n].rechazado)>0)
+    );
+    datasets = [
+      { label:'🔬 Pend.',  data: labels.map(n=>bi[n].pendiente),  backgroundColor:'#F59E0B', stack:'inv',  borderRadius:2 },
+      { label:'🔬 Comp.',  data: labels.map(n=>bi[n].completado), backgroundColor:'#10B981', stack:'inv',  borderRadius:2 },
+      { label:'🔬 Rech.',  data: labels.map(n=>bi[n].rechazado),  backgroundColor:'#EF4444', stack:'inv',  borderRadius:2 },
+      { label:'🎬 Pend.',  data: labels.map(n=>bf[n].pendiente),  backgroundColor:'#FDE68A', stack:'film', borderRadius:2 },
+      { label:'🎬 Comp.',  data: labels.map(n=>bf[n].completado), backgroundColor:'#6EE7B7', stack:'film', borderRadius:2 },
+      { label:'🎬 Rech.',  data: labels.map(n=>bf[n].rechazado),  backgroundColor:'#FCA5A5', stack:'film', borderRadius:2 },
+    ];
+  } else {
+    const b = _countByRegion(ts);
+    labels = REGIONES_CHILE.map(r => r.nombre).filter(n =>
+      b[n] && (b[n].pendiente+b[n].completado+b[n].rechazado)>0
+    );
+    const colors = f === 'inv'
+      ? ['#F59E0B','#10B981','#EF4444']
+      : ['#FBBF24','#059669','#DC2626'];
+    datasets = [
+      { label:'Pendiente',  data: labels.map(n=>b[n].pendiente),  backgroundColor:colors[0], stack:'s', borderRadius:2 },
+      { label:'Completado', data: labels.map(n=>b[n].completado), backgroundColor:colors[1], stack:'s', borderRadius:2 },
+      { label:'Rechazado',  data: labels.map(n=>b[n].rechazado),  backgroundColor:colors[2], stack:'s', borderRadius:2 },
+    ];
+  }
 
   STATE.charts.procesos = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Pendiente',
-          data: labels.map(n => byRegion[n].pendiente),
-          backgroundColor: '#FFC107',
-          borderRadius: 2,
-        },
-        {
-          label: 'Completado',
-          data: labels.map(n => byRegion[n].completado),
-          backgroundColor: '#2E7D32',
-          borderRadius: 2,
-        },
-        {
-          label: 'Rechazado',
-          data: labels.map(n => byRegion[n].rechazado),
-          backgroundColor: '#E53935',
-          borderRadius: 2,
-        },
-      ]
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
-      plugins: {
-        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } }
-      },
+      plugins: { legend: { position: 'bottom', labels: { font:{ size:10 }, boxWidth:10, padding:8 } } },
       scales: {
-        x: { stacked: true, ticks: { font: { size: 9 }, maxRotation: 45 } },
-        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+        x: { stacked: true, ticks: { font:{ size:9 }, maxRotation:45 } },
+        y: { stacked: true, beginAtZero:true, ticks:{ precision:0 } }
       }
     }
   });
 }
 
-function renderChartAvance() {
-  const ctx = $('chart-avance').getContext('2d');
-  if (STATE.charts.avance) STATE.charts.avance.destroy();
-
-  // Avance promedio por región, orden N→S
+function _avancePorRegion(tramites) {
   const byRegion = {};
-  REGIONES_CHILE.forEach(r => { byRegion[r.nombre] = { sum: 0, count: 0 }; });
-
-  STATE.tramites.forEach(t => {
-    const regs = (t.regiones_list || []);
+  REGIONES_CHILE.forEach(r => { byRegion[r.nombre] = { sum:0, count:0 }; });
+  tramites.forEach(t => {
     const matched = new Set();
-    regs.forEach(raw => {
+    (t.regiones_list || []).forEach(raw => {
       const hit = REGIONES_CHILE.find(r =>
         r.nombre.toLowerCase() === raw.toLowerCase() ||
         raw.toLowerCase().includes(r.nombre.toLowerCase().split(' ')[0].toLowerCase())
@@ -781,33 +1600,45 @@ function renderChartAvance() {
       byRegion[nombre].count++;
     });
   });
+  return byRegion;
+}
 
-  // Solo regiones con datos, en orden N→S
-  const labels = REGIONES_CHILE.map(r => r.nombre).filter(n =>
-    byRegion[n] && byRegion[n].count > 0
-  );
-  const valores = labels.map(n => Math.round(byRegion[n].sum / byRegion[n].count));
+function renderChartAvance(invs, films, ts, f) {
+  const ctx = $('chart-avance').getContext('2d');
+  if (STATE.charts.avance) STATE.charts.avance.destroy();
+
+  let datasets, labels;
+
+  if (f === 'all') {
+    const bi = _avancePorRegion(invs);
+    const bf = _avancePorRegion(films);
+    labels = REGIONES_CHILE.map(r => r.nombre).filter(n =>
+      (bi[n]&&bi[n].count>0) || (bf[n]&&bf[n].count>0)
+    );
+    const vi = labels.map(n => bi[n].count ? Math.round(bi[n].sum/bi[n].count) : null);
+    const vf = labels.map(n => bf[n].count ? Math.round(bf[n].sum/bf[n].count) : null);
+    datasets = [
+      { label:'🔬 Investigación', data:vi, backgroundColor:'#3B82F6', borderRadius:3 },
+      { label:'🎬 Filmación',     data:vf, backgroundColor:'#F97316', borderRadius:3 },
+    ];
+  } else {
+    const b = _avancePorRegion(ts);
+    labels = REGIONES_CHILE.map(r => r.nombre).filter(n => b[n]&&b[n].count>0);
+    const v = labels.map(n => Math.round(b[n].sum/b[n].count));
+    const color = f === 'inv' ? '#3B82F6' : '#F97316';
+    datasets = [{ label:'% Avance Promedio', data:v, backgroundColor:v.map(()=>color), borderRadius:4 }];
+  }
 
   STATE.charts.avance = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: '% Avance Promedio',
-        data: valores,
-        backgroundColor: valores.map(v =>
-          v >= 80 ? '#2E7D32' : v >= 50 ? '#FFC107' : '#E53935'
-        ),
-        borderRadius: 4,
-      }]
-    },
+    data: { labels, datasets },
     options: {
       indexAxis: 'y',
       responsive: true,
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: f==='all', position:'bottom', labels:{ font:{size:11}, boxWidth:12 } } },
       scales: {
-        x: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } },
-        y: { ticks: { font: { size: 10 } } }
+        x: { beginAtZero:true, max:100, ticks:{ callback: v => v+'%' } },
+        y: { ticks:{ font:{ size:10 } } }
       }
     }
   });
@@ -941,6 +1772,63 @@ function renderTablaRecientes() {
     </table>`;
 }
 
+// ─── DUPLICADOS REGIONALES ────────────────────────────────────────────────────
+function renderDuplicadosSection() {
+  const seccion = $('seccion-duplicados');
+  if (!seccion) return;
+
+  if (STATE.duplicados.size === 0) {
+    seccion.style.display = 'none';
+    return;
+  }
+
+  // Reconstruir grupos únicos para mostrar en tabla
+  const gruposVistos = new Map();
+  for (const t of STATE.tramites) {
+    if (!STATE.duplicados.has(t.id)) continue;
+    const titulo = _normInv(_tituloTramite(t));
+    const email  = _normInv(t.email_solicitante || '');
+    const key    = titulo.length >= 5
+      ? `${email}§${titulo}`
+      : `${email}§${t.proceso_id}`;
+    if (!gruposVistos.has(key)) {
+      gruposVistos.set(key, [t, ...STATE.duplicados.get(t.id)]);
+    }
+  }
+
+  const filas = [...gruposVistos.values()].map(grupo => {
+    const rep = grupo[0];
+    const tituloRaw = _tituloTramite(rep) || '–';
+    const tituloShort = tituloRaw.length > 80 ? tituloRaw.slice(0, 80) + '…' : tituloRaw;
+    const btns = grupo.map(t =>
+      `<button class="btn-detalle" onclick="openModal(${t.id})" style="font-size:11px;padding:3px 8px">
+        #${t.id} ${(t.regiones_list||[]).length ? '– ' + (t.regiones_list||[]).join(', ') : ''}
+      </button>`
+    ).join('');
+    return `<tr>
+      <td>${rep.nombre_solicitante || '–'}<br><small style="color:var(--muted)">${rep.email_solicitante || ''}</small></td>
+      <td style="font-size:12px">${tituloShort}</td>
+      <td><div style="display:flex;flex-wrap:wrap;gap:6px">${btns}</div></td>
+    </tr>`;
+  }).join('');
+
+  $('alerta-duplicados').innerHTML = `
+    <div style="padding:10px 16px;font-size:13px;color:#7D4E00;background:#FFFDE7;border-bottom:1px solid #FFD700;font-weight:600">
+      Se detectaron ${gruposVistos.size} grupo${gruposVistos.size !== 1 ? 's' : ''} de posibles permisos duplicados por región
+      (${STATE.duplicados.size} trámite${STATE.duplicados.size !== 1 ? 's' : ''} afectado${STATE.duplicados.size !== 1 ? 's' : ''}).
+      El mismo solicitante tiene múltiples solicitudes del mismo proyecto en distintas regiones.
+    </div>
+    <table>
+      <thead><tr>
+        <th style="color:#fff">Solicitante</th>
+        <th style="color:#fff">Proyecto</th>
+        <th style="color:#fff">Trámites detectados</th>
+      </tr></thead>
+      <tbody>${filas}</tbody>
+    </table>`;
+  seccion.style.display = '';
+}
+
 // ─── TRÁMITES TABLE ───────────────────────────────────────────────────────────
 function renderTramitesTable(tramites) {
   $('tramites-count').textContent = `${tramites.length} trámite${tramites.length !== 1 ? 's' : ''}`;
@@ -951,13 +1839,15 @@ function renderTramitesTable(tramites) {
   }
 
   const rows = tramites.map(t => {
-    const etapaActual = t.etapa_actual;
-    const vencida     = tramiteEsVencido(t);
-    const rechazado   = t.estado === 'rechazado';
-    const rowClass    = rechazado         ? 'row-rechazado'
-                      : vencida           ? 'row-vencido'
-                      : t.estado === 'pendiente' ? 'row-pendiente'
-                      : '';
+    const etapaActual  = t.etapa_actual;
+    const vencida      = tramiteEsVencido(t);
+    const rechazado    = t.estado === 'rechazado';
+    const esDuplicado  = STATE.duplicados.has(t.id);
+    const rowClass     = rechazado         ? 'row-rechazado'
+                       : vencida           ? 'row-vencido'
+                       : esDuplicado       ? 'row-duplicado row-pendiente'
+                       : t.estado === 'pendiente' ? 'row-pendiente'
+                       : '';
     const fvEfectiva  = fechaVencimientoEfectiva(t);
     const fvLabel     = fvEfectiva
       ? (vencida
@@ -971,6 +1861,9 @@ function renderTramitesTable(tramites) {
     let estadoBadge = badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente });
     if (inv && inv.archivos.length > 0 && t.estado === 'pendiente') {
       estadoBadge = `<span class="badge-inv-completado" title="Completado – archivos entregados">✅ Completado*</span>`;
+    }
+    if (esDuplicado) {
+      estadoBadge += `<span class="badge badge-duplicado-regional" title="Posible solicitud dividida por región — mismo proyecto en múltiples permisos">⚠️ Duplicado reg.</span>`;
     }
     return `
       <tr class="${rowClass}">
@@ -1087,6 +1980,165 @@ async function ejecutarBusqueda() {
   renderSearchResults(resultados, query);
 }
 
+// ─── Upload de archivos de investigación ─────────────────────────────────────
+
+function _normCarpetaNombre(nombre) {
+  return (nombre || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')  // quita tildes
+    .replace(/[^\w\s]/g, '')                            // quita puntuación
+    .trim().replace(/\s+/g, '_');
+}
+
+function _carpetaExistenteParaInv(nombre) {
+  // Busca en STATE.investigaciones la carpeta que mejor matchea el nombre
+  const tokens = _normInv(nombre).split('_').filter(Boolean);
+  return Object.keys(STATE.investigaciones).find(k => {
+    const kn = _normInv(k);
+    return tokens.every(tok => kn.includes(tok));
+  }) || null;
+}
+
+function _archivosExistentesPorId(carpeta, id) {
+  const inv = STATE.investigaciones[carpeta];
+  if (!inv) return [];
+  if (inv.tipo === 'nested') return inv.ids[String(id)] || [];
+  return []; // flat: no ID separado
+}
+
+function toggleUploadPanel(tramiteId) {
+  const row = $(`upload-panel-${tramiteId}`);
+  if (!row) return;
+  const visible = row.style.display !== 'none';
+  row.style.display = visible ? 'none' : 'table-row';
+}
+
+function _uploadPanelHtml(t) {
+  if (!IDS_INVESTIGACION.has(t.proceso_id)) return '';
+  const nombre     = t.nombre_solicitante || '';
+  const carpeta    = _carpetaExistenteParaInv(nombre) || _normCarpetaNombre(nombre);
+  const archExist  = _archivosExistentesPorId(carpeta, t.id);
+
+  // Aviso si es posible duplicado/extensión
+  const relacionados = STATE.duplicados.get(t.id) || [];
+  const avisoExt = relacionados.length ? `
+    <div class="upload-ext-warning">
+      ⚠️ Este permiso tiene solicitudes relacionadas (#${relacionados.map(r=>r.id).join(', #')}).
+      Si es una <strong>extensión</strong>, los archivos ya estarán en otra subcarpeta.
+    </div>` : '';
+
+  const archHtml = archExist.length
+    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">Archivos ya subidos en esta solicitud:</div>
+       <div class="upload-archivos-existentes">${archExist.map(a =>
+         `<a class="upload-archivo-link" href="${a.url}" target="_blank">📄 ${a.nombre}</a>`
+       ).join('')}</div>`
+    : `<div style="font-size:12px;color:var(--muted)">Sin archivos subidos aún para esta solicitud (ID ${t.id}).</div>`;
+
+  return `
+    <tr id="upload-panel-${t.id}" class="upload-panel-row" style="display:none">
+      <td colspan="12">
+        <div class="upload-panel">
+          <div class="upload-panel-header">
+            📁 Archivos de investigación — ${nombre}
+            <span style="font-weight:400;font-size:12px;color:var(--muted)"> → Investigaciones/${carpeta}/${t.id}/</span>
+          </div>
+          ${avisoExt}
+          ${archHtml}
+          <div class="upload-drop-zone" id="dropzone-${t.id}"
+               onclick="document.getElementById('file-input-${t.id}').click()"
+               ondragover="event.preventDefault();this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="invHandleDrop(event,${t.id})">
+            <input type="file" id="file-input-${t.id}" multiple
+                   accept=".pdf,.doc,.docx,.csv,.xls,.xlsx"
+                   onchange="invHandleFiles(${t.id}, this.files)">
+            <div>📎 Haz clic o arrastra archivos aquí<br>
+              <small>PDF, Word, Excel — máx. 50 MB por archivo</small></div>
+          </div>
+          <ul class="upload-file-list" id="file-list-${t.id}"></ul>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn-primary" style="padding:6px 18px"
+                    onclick="invSubirArchivos(${t.id}, '${nombre.replace(/'/g,"\\'")}', '${carpeta}')">
+              ⬆️ Subir archivos
+            </button>
+            <span id="upload-status-${t.id}" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+        </div>
+      </td>
+    </tr>`;
+}
+
+// Archivos pendientes de subir por tramite ID
+const _uploadPendiente = {};
+
+function invHandleFiles(tramiteId, files) {
+  if (!_uploadPendiente[tramiteId]) _uploadPendiente[tramiteId] = [];
+  for (const f of files) _uploadPendiente[tramiteId].push(f);
+  _renderFileList(tramiteId);
+}
+
+function invHandleDrop(event, tramiteId) {
+  event.preventDefault();
+  $(`dropzone-${tramiteId}`).classList.remove('drag-over');
+  invHandleFiles(tramiteId, event.dataTransfer.files);
+}
+
+function _renderFileList(tramiteId) {
+  const ul = $(`file-list-${tramiteId}`);
+  if (!ul) return;
+  const files = _uploadPendiente[tramiteId] || [];
+  ul.innerHTML = files.map((f, i) =>
+    `<li class="upload-file-item">
+      <span>📄 ${f.name} <small style="color:var(--muted)">(${(f.size/1024).toFixed(0)} KB)</small></span>
+      <span class="rm" onclick="_removeFile(${tramiteId},${i})">✕</span>
+    </li>`
+  ).join('');
+}
+
+function _removeFile(tramiteId, idx) {
+  if (_uploadPendiente[tramiteId]) {
+    _uploadPendiente[tramiteId].splice(idx, 1);
+    _renderFileList(tramiteId);
+  }
+}
+
+async function invSubirArchivos(tramiteId, nombre, carpeta) {
+  const files = _uploadPendiente[tramiteId] || [];
+  const status = $(`upload-status-${tramiteId}`);
+  if (!files.length) {
+    if (status) status.textContent = 'Selecciona archivos primero.';
+    return;
+  }
+  if (status) status.textContent = 'Subiendo…';
+  const fd = new FormData();
+  fd.append('tramite_id', tramiteId);
+  fd.append('nombre', nombre);
+  for (const f of files) fd.append('archivos', f);
+
+  try {
+    const resp = await fetch('/api/investigaciones/upload', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.ok) {
+      _uploadPendiente[tramiteId] = [];
+      _renderFileList(tramiteId);
+      if (status) status.textContent = `✅ ${data.guardados.length} archivo(s) subido(s) en ${data.carpeta}`;
+      // Actualizar STATE.investigaciones para reflejar nuevos archivos
+      await loadInvestigaciones();
+      // Refrescar el botón de archivos en la tabla
+      const btn = $(`btn-archivos-${tramiteId}`);
+      if (btn) {
+        const inv = STATE.investigaciones[carpeta];
+        const count = inv ? (inv.tipo === 'nested' ? (inv.ids[String(tramiteId)] || []).length : 0) : 0;
+        btn.textContent = `📁 ${count}`;
+        btn.className = `btn-archivos ${count > 0 ? 'btn-archivos--tiene' : ''}`;
+      }
+    } else {
+      if (status) status.textContent = '❌ Error: ' + (data.error || 'desconocido');
+    }
+  } catch(e) {
+    if (status) status.textContent = '❌ Error de red: ' + e.message;
+  }
+}
+
 function renderSearchResults(tramites, query, hint = '') {
   if (!tramites.length) {
     $('search-results').innerHTML = `<div class="empty-msg">No se encontraron trámites para "<strong>${query}</strong>" ${hint}</div>`;
@@ -1094,20 +2146,34 @@ function renderSearchResults(tramites, query, hint = '') {
   }
 
   const CONAF_BASE = 'https://conaf.cerofilas.gob.cl/backend/seguimiento';
-  const rows = tramites.map(t => {
-    const auth = t.archivo_autorizacion;
-    let authBtn;
-    if (auth) {
-      // Abrir directamente la etapa con el documento en CONAF (requiere sesión CONAF)
-      const etapaId = t.etapa_autorizacion_id;
-      const conafUrl = etapaId
-        ? `${CONAF_BASE}/ver_etapa/${etapaId}`
-        : `${CONAF_BASE}/ver/${t.id}`;
-      authBtn = `<a class="btn-auth-dl" href="${conafUrl}" target="_blank" rel="noopener" title="Ver autorización en CONAF (debe estar autenticado)">📄 Ver en CONAF</a>`;
-    } else {
-      authBtn = `<span style="color:#aaa;font-size:12px">–</span>`;
+  const rows = tramites.flatMap(t => {
+    const esInv = IDS_INVESTIGACION.has(t.proceso_id);
+    const auth  = t.archivo_autorizacion;
+    const etapaId = t.etapa_autorizacion_id;
+    const conafUrl = etapaId
+      ? `${CONAF_BASE}/ver_etapa/${etapaId}`
+      : `${CONAF_BASE}/ver/${t.id}`;
+    const authBtn = auth
+      ? `<a class="btn-auth-dl" href="${conafUrl}" target="_blank" rel="noopener">📄 Ver en CONAF</a>`
+      : `<span style="color:#aaa;font-size:12px">–</span>`;
+
+    // Botón de archivos solo para investigaciones
+    let archivosCell = '<td><span style="color:var(--muted);font-size:12px">–</span></td>';
+    if (esInv) {
+      const carpeta = _carpetaExistenteParaInv(t.nombre_solicitante || '') || _normCarpetaNombre(t.nombre_solicitante || '');
+      const archExist = _archivosExistentesPorId(carpeta, t.id);
+      const count = archExist.length;
+      archivosCell = `<td>
+        <button id="btn-archivos-${t.id}"
+                class="btn-archivos ${count > 0 ? 'btn-archivos--tiene' : ''}"
+                onclick="toggleUploadPanel(${t.id})"
+                title="${count > 0 ? count + ' archivo(s) – click para gestionar' : 'Sin archivos – click para agregar'}">
+          📁 ${count > 0 ? count : '+'}
+        </button>
+      </td>`;
     }
-    return `
+
+    const mainRow = `
     <tr>
       <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
       <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente })}</td>
@@ -1120,7 +2186,10 @@ function renderSearchResults(tramites, query, hint = '') {
       <td>${formatDate(t.fecha_inicio)}</td>
       <td>${formatDate(t.fecha_termino)}</td>
       <td>${authBtn}</td>
+      ${archivosCell}
     </tr>`;
+
+    return [mainRow, _uploadPanelHtml(t)];
   }).join('');
 
   $('search-results').innerHTML = `
@@ -1133,11 +2202,17 @@ function renderSearchResults(tramites, query, hint = '') {
         <th>ID</th><th>Estado</th><th>Tipo</th><th>Proceso</th>
         <th>Solicitante</th><th>Email</th><th>Regiones</th>
         <th style="min-width:120px">Avance</th><th>Inicio</th><th>Término</th>
-        <th>Autorización</th>
+        <th>Autorización</th><th>📁 Archivos</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 }
+
+window.toggleUploadPanel = toggleUploadPanel;
+window.invHandleDrop     = invHandleDrop;
+window.invHandleFiles    = invHandleFiles;
+window.invSubirArchivos  = invSubirArchivos;
+window._removeFile       = _removeFile;
 
 // ─── MODAL DETALLE ────────────────────────────────────────────────────────────
 async function openModal(tramiteId) {
@@ -1393,21 +2468,24 @@ function renderModalBody(t) {
     regAreaMap[idx] = regAreaMap[idx] || {};
 
     if (RE_REGION.test(k)) {
-      const regionDeMatch = k.match(/^region_de(?:l)?_(.+)$/i);
-      if (regionDeMatch) {
-        // La región viene siempre de la CLAVE (ej: region_de_magallanes → Magallanes)
-        const regionFromKey = humanizarRegion(regionDeMatch[1]);
-        if (regionFromKey) {
-          regAreaMap[idx].region = regionFromKey;
-          // Si el valor no es "si/true" sino una lista de áreas → va a columna Área
-          if (!_IGNORAR_VAL.test(rawV.trim()) && !rawV.startsWith('{')) {
-            regAreaMap[idx].area = rawV;
-          }
+      // Patrones donde la CLAVE codifica el nombre de región y el VALOR son las áreas:
+      //   region_de_magallanes → Magallanes
+      //   region_del_biobio    → Biobío
+      //   region_aisen_del_gral_carlos_iba → Aysén  (sin prefijo "de/del")
+      const regionKeyMatch = k.match(/^region_(?:de(?:l)?_)?(.+)$/i);
+      const regionFromKey  = regionKeyMatch ? humanizarRegion(regionKeyMatch[1]) : null;
+
+      if (regionFromKey) {
+        regAreaMap[idx].region = regionFromKey;
+        // Si el valor no es "si/true" sino una lista de áreas → va a columna Área
+        if (!_IGNORAR_VAL.test(rawV.trim()) && !rawV.startsWith('{')) {
+          regAreaMap[idx].area = rawV;
         }
-        // Si no se pudo extraer región de la clave, se ignora la fila
-      } else {
+      } else if (!regionKeyMatch || !k.match(/^region_(?:de(?:l)?_)/i)) {
+        // No es un patrón region_de/del_ → tratar el VALOR como nombre de región
         regAreaMap[idx].region = rawV;
       }
+      // Si era region_de_ALGO pero ALGO no es una región válida → ignorar la fila
     } else {
       regAreaMap[idx].area = rawV;
     }
@@ -1425,17 +2503,20 @@ function renderModalBody(t) {
     .filter(Boolean);
 
   // Suprimir filas combinadas redundantes:
-  // si "Coquimbo, Los Ríos" aparece sin áreas pero ya existen filas individuales
-  // con esas regiones, la fila combinada no aporta información útil.
-  const regionesConArea = new Set(
-    filasProc.filter(f => f.areas.length > 0).map(f => f.sortKey.toLowerCase())
+  // Una fila "Biobío, Aysén, Magallanes" sin áreas se suprime si TODAS sus
+  // regiones constituyentes ya aparecen como filas individuales (con o sin áreas).
+  const regionesIndividuales = new Set(
+    filasProc
+      .filter(f => !f.sortKey.includes(','))   // solo filas de una región
+      .map(f => f.sortKey.toLowerCase())
   );
   const filasRegion = filasProc
     .filter(f => {
-      if (f.areas.length > 0) return true;  // tiene áreas → conservar siempre
-      // Si la región está cubierta por filas con áreas → suprimir
+      if (f.areas.length > 0) return true;      // tiene áreas → conservar siempre
       const partes = f.sortKey.split(',').map(s => s.trim().toLowerCase());
-      return !partes.every(p => regionesConArea.has(p));
+      if (partes.length <= 1) return true;       // fila individual sin área → conservar
+      // Fila combinada sin áreas: suprimir si todas las partes ya están individuales
+      return !partes.every(p => regionesIndividuales.has(p));
     })
     .sort((a, b) => indiceRegion(a.sortKey) - indiceRegion(b.sortKey));
 
@@ -1588,8 +2669,39 @@ function renderModalBody(t) {
       </div>
     </div>` : '';
 
+  // ── Banner de duplicado regional ────────────────────────────────────────────
+  const relacionados = STATE.duplicados.get(t.id) || [];
+  const duplicadoBannerHtml = relacionados.length > 0 ? `
+    <div style="
+      background:#FFF3CD;
+      border:2px solid #F0A500;
+      border-radius:10px;
+      padding:16px 20px;
+      margin-bottom:18px;
+      display:flex;
+      align-items:flex-start;
+      gap:14px;
+    ">
+      <span style="font-size:28px;line-height:1">⚠️</span>
+      <div style="flex:1">
+        <div style="font-weight:800;font-size:15px;color:#7D4E00;margin-bottom:6px">
+          Posible duplicado regional detectado
+        </div>
+        <div style="font-size:13px;color:#7D4E00;line-height:1.6;margin-bottom:10px">
+          Este trámite podría ser una solicitud regional separada del mismo proyecto.<br>
+          El solicitante tiene otros permisos con el mismo proyecto que deben ser consolidados en una sola solicitud:
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${relacionados.map(r => `
+            <button onclick="openModal(${r.id})" class="btn-detalle" style="background:#E65100;font-size:12px">
+              #${r.id} — ${(r.regiones_list||[]).join(', ')||'Sin región'}
+            </button>`).join('')}
+        </div>
+      </div>
+    </div>` : '';
+
   // ── Render completo ─────────────────────────────────────────────────────────
-  $('modal-tramite-body').innerHTML = borradorBannerHtml + `
+  $('modal-tramite-body').innerHTML = borradorBannerHtml + duplicadoBannerHtml + `
 
     <!-- 1. INFORMACIÓN GENERAL -->
     <div class="modal-section">
@@ -2077,9 +3189,10 @@ async function abrirModalCorreos() {
 }
 
 // Make correo functions global for inline onclick
-window.correoVer        = correoVer;
-window.correoAbrirGmail = correoAbrirGmail;
-window.correoOmitir     = correoOmitir;
+window.correoVer             = correoVer;
+window.correoAbrirGmail      = correoAbrirGmail;
+window.correoOmitir          = correoOmitir;
+window.renderTablaEntregadas = renderTablaEntregadas;
 
 // ─── EVENT LISTENERS ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -2091,6 +3204,16 @@ document.addEventListener('DOMContentLoaded', () => {
       qsa('.tab-content').forEach(s => s.classList.remove('active'));
       btn.classList.add('active');
       $(`tab-${btn.dataset.tab}`).classList.add('active');
+    });
+  });
+
+  // Filtro de tipo en el dashboard
+  qsa('.dash-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      qsa('.dash-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      STATE.dashFilter = btn.dataset.filter;
+      renderDashboard();
     });
   });
 
@@ -2117,8 +3240,10 @@ document.addEventListener('DOMContentLoaded', () => {
         STATE.tramites = filtrarRango(await loadTramites());
       }
       STATE.tramitesFiltrados = [...STATE.tramites];
+      STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
       updateLastUpdate();
       renderDashboard();
+      renderPortada();
       renderTramitesTable(STATE.tramitesFiltrados);
       populateRegionSelect();
     } catch (err) {

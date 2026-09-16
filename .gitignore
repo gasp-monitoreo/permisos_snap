@@ -1,7 +1,14 @@
 # ── Secretos y credenciales ────────────────────────────────────────────────────
 .env
+.env.prod
 gmail_token.json
 gmail_credentials.json
+
+# ── Caché de API (se regenera en producción) ────────────────────────────────────
+cache/
+
+# ── Autenticación Gmail (sensible, copiar manualmente a la VM) ─────────────────
+gmail_auth/
 
 # ── Carpeta de investigadores (archivos de campo, no van en git) ───────────────
 Investigaciones/

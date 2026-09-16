@@ -1,0 +1,37 @@
+{
+    email ignacio.diaz@conaf.cl
+    admin off
+}
+
+# ── Producción ────────────────────────────────────────────────────────────────
+permisos.monitoreo-snap.cl {
+    encode gzip
+
+    request_body {
+        max_size 100MB
+    }
+
+    reverse_proxy localhost:18000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    log {
+        output file /var/log/caddy/permisos_snap.log
+    }
+}
+
+# ── Desarrollo local (sin dominio) ────────────────────────────────────────────
+# Descomentar solo para uso local con docker-compose.yml (no docker-compose.prod.yml)
+# :80 {
+#     encode gzip
+#     request_body { max_size 100MB }
+#     reverse_proxy app:8000 {
+#         header_up Host {host}
+#         header_up X-Real-IP {remote_host}
+#         header_up X-Forwarded-For {remote_host}
+#         header_up X-Forwarded-Proto {scheme}
+#     }
+# }
