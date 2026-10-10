@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cambiar clave – Permisos SNAP</title>
+  <link rel="icon" href="/static/img/favicon.png" type="image/png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display&display=swap">
+  <style>
+    :root { --em-950: #01261A; --em-900: #013722; --em-800: #0A4A2B; --em-500: #4A9324;
+            --bg: #F5F3EC; --border: #E4E1D5; --text: #0E2219; --muted: #5F6B62; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: radial-gradient(circle at 70% 30%, #FBF9F4, var(--bg) 70%);
+           color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+    .card { background: #fff; border: 1px solid var(--border); border-radius: 24px; padding: 44px 48px 36px; width: 100%;
+            max-width: 480px; box-shadow: 0 30px 70px rgba(40,35,20,.10), 0 6px 16px rgba(40,35,20,.05); }
+    .brand { display: flex; justify-content: center; margin-bottom: 18px; }
+    .brand img { width: 150px; }
+    h1 { font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; font-size: 28px; text-align: center; color: var(--em-950); }
+    .lead { text-align: center; color: var(--muted); font-size: 15px; margin: 8px 0 24px; line-height: 1.5; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+    input { width: 100%; padding: 13px 16px; background: #FAF8F3; border: 1px solid var(--border); border-radius: 10px;
+            font: 16px 'DM Sans', sans-serif; color: var(--text); outline: none; }
+    input:focus { border-color: var(--em-500); background: #fff; box-shadow: 0 0 0 4px rgba(74,147,36,.15); }
+    .ayuda { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+    .btn { width: 100%; padding: 15px; background: var(--em-900); border: none; border-radius: 10px; color: #fff;
+           font: 600 16px 'DM Sans', sans-serif; cursor: pointer; margin-top: 8px; }
+    .btn:hover { background: var(--em-800); }
+    .secundario { display: block; text-align: center; margin-top: 16px; font-size: 14px; color: var(--muted); }
+    .secundario button { background: none; border: none; color: var(--em-800); font: 600 14px 'DM Sans', sans-serif; cursor: pointer; text-decoration: underline; }
+    .error { background: #FDF0EE; border: 1px solid #F2C7C0; color: #9B2C1F; border-radius: 10px; padding: 11px 14px; font-size: 14px; margin-bottom: 18px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand"><img src="/static/img/logo.png" alt="Permisos SNAP" /></div>
+    {% if obligatorio %}
+      <h1>Defina su clave</h1>
+      <p class="lead">Hola {{ nombre }}. Está ingresando con una clave temporal: elija una clave personal para continuar. Solo usted la conocerá.</p>
+    {% else %}
+      <h1>Cambiar clave</h1>
+      <p class="lead">Ingrese su clave actual y la nueva.</p>
+    {% endif %}
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <form method="post" autocomplete="off">
+      {% csrf_token %}
+      <div class="form-group">
+        <label for="actual">{% if obligatorio %}Clave temporal{% else %}Clave actual{% endif %}</label>
+        <input type="password" id="actual" name="actual" autocomplete="current-password" required autofocus />
+      </div>
+      <div class="form-group">
+        <label for="nueva">Nueva clave</label>
+        <input type="password" id="nueva" name="nueva" autocomplete="new-password" minlength="8" required />
+        <div class="ayuda">Mínimo 8 caracteres.</div>
+      </div>
+      <div class="form-group">
+        <label for="repetir">Repita la nueva clave</label>
+        <input type="password" id="repetir" name="repetir" autocomplete="new-password" minlength="8" required />
+      </div>
+      <button type="submit" class="btn">Guardar clave</button>
+    </form>
+
+    <form method="post" action="/logout/" class="secundario">
+      {% csrf_token %}
+      {% if obligatorio %}<button type="submit">Cerrar sesión</button>{% else %}<a href="/">Volver a la plataforma</a>{% endif %}
+    </form>
+  </div>
+</body>
+</html>

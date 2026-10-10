@@ -27,7 +27,20 @@ INV_DIR       = settings.INVESTIGACIONES_DIR
 INV_EXTENSIONS = {'.pdf', '.doc', '.docx', '.csv', '.xls', '.xlsx'}
 DOMAIN        = 'https://conaf.cerofilas.gob.cl'
 
-api = NinjaAPI(title='SNAP API', version='2.0', docs_url='/docs')
+from .usuarios import SesionAuth, perfil_de, requiere
+
+# Toda la API exige sesión iniciada (antes era pública y exponía datos personales)
+api = NinjaAPI(title='SNAP API', version='2.0', docs_url=None, auth=SesionAuth())
+
+
+def _region_forzada(request):
+    """Región a la que el perfil restringe los datos (None = todo el país)."""
+    return perfil_de(request.user).region_forzada()
+
+
+def _filtrar_region(request, lista):
+    reg = _region_forzada(request)
+    return lista if not reg else [t for t in lista if reg in (t.get('regiones_list') or [])]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -99,8 +112,10 @@ def get_tramites(
         if solo_rango:
             from . import tramites_cache
             desde, hasta = tramites_cache.rango_anios(created_at_start, created_at_end)
-            entrada = tramites_cache.obtener(desde, hasta, forzar=fresco)
-            return {'ok': True, 'data': entrada['data'], 'total': len(entrada['data']),
+            forzar = fresco and perfil_de(request.user).puede('editar')
+            entrada = tramites_cache.obtener(desde, hasta, forzar=forzar)
+            data = _filtrar_region(request, entrada['data'])
+            return {'ok': True, 'data': data, 'total': len(data),
                     'actualizado_en': datetime.fromtimestamp(entrada['ts']).isoformat()}
 
         date_cutoff = None
@@ -117,7 +132,7 @@ def get_tramites(
             date_cutoff=date_cutoff,
         )
         normalized = [normalize_tramite(t) for t in raw]
-        normalized = [t for t in normalized if es_tramite_visible(t)]
+        normalized = _filtrar_region(request, [t for t in normalized if es_tramite_visible(t)])
         return {'ok': True, 'data': normalized, 'total': len(normalized)}
     except Exception as e:
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=500)
@@ -128,7 +143,10 @@ def get_tramite(request, tramite_id: int):
     try:
         data = api_get(f'/tramites/{tramite_id}')
         t    = data.get('tramite', data)
-        return {'ok': True, 'data': normalize_tramite(t)}
+        norm = normalize_tramite(t)
+        if not _filtrar_region(request, [norm]):
+            return api.create_response(request, {'ok': False, 'error': 'Trámite fuera de su región.'}, status=403)
+        return {'ok': True, 'data': norm}
     except _requests.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=status)
@@ -139,6 +157,7 @@ def get_tramite(request, tramite_id: int):
 # ── Cache ─────────────────────────────────────────────────────────────────────
 
 @api.post('/cache/refresh')
+@requiere(accion='editar')
 def cache_refresh(request):
     refresh_caches()
     return {'ok': True, 'msg': 'Regeneración en background iniciada.'}
@@ -149,7 +168,7 @@ def cache_refresh(request):
 @api.get('/portada/historico')
 def portada_historico(request):
     try:
-        data = get_portada_historico_data()
+        data = _filtrar_region(request, get_portada_historico_data())
         return {'ok': True, 'data': data, 'total': len(data)}
     except Exception as e:
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=500)
@@ -161,6 +180,7 @@ def portada_historico(request):
 def compliance_investigacion(request):
     try:
         resultados, revisados = get_compliance_data()
+        resultados = _filtrar_region(request, resultados)
         return {'ok': True, 'data': resultados, 'total': len(resultados),
                 'candidatos_revisados': revisados}
     except Exception as e:
@@ -170,6 +190,7 @@ def compliance_investigacion(request):
 # ── Export Excel ──────────────────────────────────────────────────────────────
 
 @api.get('/export/excel')
+@requiere(seccion='exportar')
 def export_excel(
     request,
     proceso_id: Optional[int]   = None,
@@ -213,6 +234,7 @@ def export_excel(
 
 
 @api.get('/export/compliance/excel')
+@requiere(seccion='exportar')
 def export_compliance_excel(request):
     try:
         resultados, _ = get_compliance_data()
@@ -291,6 +313,7 @@ def descargar_adjunto(
 
 
 @api.get('/adjunto/debug')
+@requiere(superusuario=True)
 def debug_adjunto(request, archivo: str, tramite_id: Optional[str] = None):
     TOKEN = settings.CEROFILAS_TOKEN
     if not archivo:
@@ -313,6 +336,7 @@ def debug_adjunto(request, archivo: str, tramite_id: Optional[str] = None):
 # ── Search by area ────────────────────────────────────────────────────────────
 
 @api.get('/search/area')
+@requiere(seccion='busqueda')
 def search_by_area(
     request, q: str,
     year_from: Optional[int] = None,
@@ -357,7 +381,7 @@ def search_by_area(
                 if r:
                     results.append(r)
 
-    results = [t for t in results if es_tramite_visible(t)]
+    results = _filtrar_region(request, [t for t in results if es_tramite_visible(t)])
     results.sort(key=lambda x: x.get('fecha_inicio') or '', reverse=True)
     return {'ok': True, 'data': results, 'total': len(results),
             'searched': len(tramite_ids), 'year_from': year_from, 'year_to': year_to}
@@ -366,6 +390,7 @@ def search_by_area(
 # ── Email ─────────────────────────────────────────────────────────────────────
 
 @api.post('/email/send')
+@requiere(accion='agregar', seccion='exportar')
 def send_email_route(request):
     import smtplib
     data = request.body and __import__('json').loads(request.body) or {}
@@ -399,6 +424,7 @@ def gmail_auth_status(request):
 
 
 @api.post('/email/draft')
+@requiere(accion='agregar', seccion='exportar')
 def create_draft_route(request):
     data = request.body and __import__('json').loads(request.body) or {}
     em   = data.get('email', {})
@@ -437,6 +463,7 @@ def investigaciones_drive(request):
 
 
 @api.post('/investigaciones/drive/refresh')
+@requiere(accion='editar')
 def investigaciones_drive_refresh(request):
     """Invalida el caché de Drive y fuerza recarga."""
     from .drive_utils import invalidate_cache, get_cached_index
@@ -454,6 +481,9 @@ def presion_areas(request, region: str, tipo: Optional[str] = None):
     """Permisos activos (en ejecución, programados, en evaluación) por área protegida de una región.
     tipo: 'inv' (investigación) o 'film' (filmación y fotografía); sin tipo, ambos."""
     from .presion import presion_region
+    forzada = _region_forzada(request)
+    if forzada and region != forzada:
+        return api.create_response(request, {'ok': False, 'error': 'Solo puede consultar su región.'}, status=403)
     if tipo not in (None, 'inv', 'film'):
         return api.create_response(request, {'ok': False, 'error': 'tipo debe ser inv o film'}, status=400)
     try:
@@ -559,6 +589,7 @@ def investigaciones_archivos_id(request, nombre: str, tramite_id: str):
 
 
 @api.post('/investigaciones/upload')
+@requiere(accion='agregar')
 def investigaciones_upload(
     request,
     nombre: Form[str],
@@ -617,3 +648,241 @@ def translate_text(request):
         return {'ok': True, 'traduccion': traduccion}
     except Exception as exc:
         return {'ok': False, 'error': str(exc), 'traduccion': texto}
+
+
+# ── Usuarios (solo superusuario) ─────────────────────────────────────────────
+
+@api.get('/me')
+def mi_perfil(request):
+    u = request.user
+    return {'ok': True, 'nombre': u.get_full_name() or u.username, 'email': u.email or u.username,
+            **perfil_de(u).como_dict()}
+
+
+def _usuario_dict(u):
+    p = perfil_de(u)
+    return {
+        'id': u.id, 'email': u.email or u.username, 'nombre': u.get_full_name(),
+        'activo': u.is_active, 'superusuario': u.is_superuser,
+        'tipo': p.tipo, 'region': p.region, 'solo_su_region': p.solo_su_region,
+        'secciones': p.secciones_visibles(),
+        'permisos': {a: p.puede(a) for a in ('agregar', 'editar', 'borrar')},
+        'clave_pendiente': p.debe_cambiar_password,
+        'ultimo_ingreso': u.last_login.isoformat() if u.last_login else None,
+    }
+
+
+def _cuerpo(request):
+    import json
+    try:
+        return json.loads(request.body or b'{}')
+    except ValueError:
+        return {}
+
+
+def _aplicar_datos(u, p, d):
+    """Copia los campos editables del formulario al usuario y su perfil."""
+    from .models import SECCIONES
+    from .usuarios import REGIONES
+    if 'nombre' in d:
+        partes = str(d['nombre']).split()
+        u.first_name, u.last_name = ' '.join(partes[:1])[:150], ' '.join(partes[1:])[:150]
+    if 'activo' in d and not u.is_superuser:
+        u.is_active = bool(d['activo'])
+    if 'tipo' in d and d['tipo'] in ('inv', 'film', 'ambos', 'nacional'):
+        p.tipo = d['tipo']
+    if 'region' in d:
+        p.region = d['region'] if d['region'] in REGIONES else ''
+    if 'solo_su_region' in d:
+        p.solo_su_region = bool(d['solo_su_region']) and bool(p.region)
+    if 'secciones' in d:
+        p.secciones = [s for s in d['secciones'] if s in SECCIONES]
+    for a in ('agregar', 'editar', 'borrar'):
+        if a in (d.get('permisos') or {}):
+            setattr(p, f'puede_{a}', bool(d['permisos'][a]))
+
+
+@api.get('/usuarios')
+@requiere(superusuario=True)
+def usuarios_lista(request):
+    from django.contrib.auth import get_user_model
+    from .models import SECCIONES
+    from .usuarios import REGIONES
+    us = get_user_model().objects.order_by('-is_superuser', 'perfil__region', 'last_name', 'first_name')
+    return {'ok': True, 'data': [_usuario_dict(u) for u in us],
+            'secciones': SECCIONES, 'regiones': REGIONES}
+
+
+@api.post('/usuarios')
+@requiere(superusuario=True)
+def usuarios_crear(request):
+    from django.contrib.auth import get_user_model
+    from .models import PerfilUsuario, secciones_por_defecto
+    from .usuarios import restablecer_clave
+    d = _cuerpo(request)
+    email = str(d.get('email') or '').strip().lower()
+    if '@' not in email:
+        return api.create_response(request, {'ok': False, 'error': 'Correo inválido.'}, status=400)
+    User = get_user_model()
+    if User.objects.filter(username__iexact=email).exists():
+        return api.create_response(request, {'ok': False, 'error': 'Ya existe un usuario con ese correo.'}, status=400)
+    u = User.objects.create_user(username=email, email=email)
+    tipo = d.get('tipo') if d.get('tipo') in ('inv', 'film', 'ambos', 'nacional') else 'nacional'
+    p = PerfilUsuario.objects.create(user=u, tipo=tipo, secciones=secciones_por_defecto(tipo))
+    _aplicar_datos(u, p, d)
+    u.save()
+    p.save()
+    clave = restablecer_clave(u)
+    return {'ok': True, 'usuario': _usuario_dict(u), 'clave_temporal': clave}
+
+
+@api.put('/usuarios/{int:uid}')
+@requiere(superusuario=True)
+def usuarios_editar(request, uid: int):
+    from django.contrib.auth import get_user_model
+    u = get_user_model().objects.filter(id=uid).first()
+    if not u:
+        return api.create_response(request, {'ok': False, 'error': 'Usuario no encontrado.'}, status=404)
+    p = perfil_de(u)
+    _aplicar_datos(u, p, _cuerpo(request))
+    u.save()
+    p.save()
+    return {'ok': True, 'usuario': _usuario_dict(u)}
+
+
+@api.delete('/usuarios/{int:uid}')
+@requiere(superusuario=True)
+def usuarios_borrar(request, uid: int):
+    from django.contrib.auth import get_user_model
+    u = get_user_model().objects.filter(id=uid).first()
+    if not u:
+        return api.create_response(request, {'ok': False, 'error': 'Usuario no encontrado.'}, status=404)
+    if u.id == request.user.id or u.is_superuser:
+        return api.create_response(request, {'ok': False, 'error': 'No se puede eliminar un superusuario.'}, status=400)
+    u.delete()
+    return {'ok': True}
+
+
+@api.post('/usuarios/{int:uid}/restablecer')
+@requiere(superusuario=True)
+def usuarios_restablecer(request, uid: int):
+    """Clave temporal nueva (el usuario la olvidó). Se muestra una vez; la planilla la regenera."""
+    from django.contrib.auth import get_user_model
+    from .usuarios import restablecer_clave
+    u = get_user_model().objects.filter(id=uid).first()
+    if not u or u.id == request.user.id:
+        return api.create_response(request, {'ok': False, 'error': 'Usuario no válido.'}, status=400)
+    return {'ok': True, 'clave_temporal': restablecer_clave(u), 'usuario': _usuario_dict(u)}
+
+
+@api.post('/usuarios/encargados')
+@requiere(superusuario=True)
+def usuarios_encargados(request):
+    """Detecta los encargados regionales en los trámites y crea las cuentas que falten."""
+    from .usuarios import crear_cuentas_encargados, detectar_encargados
+    enc = detectar_encargados()
+    creados, actualizados = crear_cuentas_encargados(enc)
+    return {'ok': True, 'encargados': enc, 'creados': creados, 'actualizados': actualizados}
+
+
+@api.post('/usuarios/planilla')
+@requiere(superusuario=True)
+def usuarios_planilla(request):
+    """Planilla de usuarios con claves temporales, cifrada con la clave del superusuario.
+
+    Cada descarga regenera la clave de quienes aún no definen la suya; quienes ya la
+    cambiaron aparecen como «clave propia» y no se modifican.
+    """
+    import io
+    import time as _t
+    from datetime import datetime as _dt
+    from concurrent.futures import ThreadPoolExecutor as _Pool
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.hashers import make_password
+    from django.http import HttpResponse
+    from msoffcrypto.format.ooxml import OOXMLFile
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from .models import SECCIONES, TIPOS_PERFIL
+    from .usuarios import clave_temporal, intento_bloqueado, registrar_intento
+
+    yo = request.user
+    if intento_bloqueado(yo.id):
+        return api.create_response(request, {'ok': False, 'error': 'Demasiados intentos. Espere 10 minutos.'}, status=429)
+    clave_admin = str(_cuerpo(request).get('password') or '')
+    if not yo.check_password(clave_admin):
+        registrar_intento(yo.id, False)
+        _t.sleep(0.8)
+        return api.create_response(request, {'ok': False, 'error': 'Contraseña incorrecta.'}, status=401)
+    registrar_intento(yo.id, True)
+
+    tipos = dict(TIPOS_PERFIL)
+    usuarios = list(get_user_model().objects.select_related('perfil').order_by('perfil__region', 'last_name', 'first_name'))
+    # Claves nuevas para quienes aún no definen la suya (se regeneran en cada descarga).
+    # El hash (PBKDF2) toma ~1 s por clave: se calcula en paralelo.
+    nuevas = {u.id: clave_temporal() for u in usuarios
+              if u.id != yo.id and u.is_active and perfil_de(u).debe_cambiar_password}
+    with _Pool(max_workers=8) as pool:
+        hashes = dict(zip(nuevas, pool.map(make_password, nuevas.values())))
+    for u in usuarios:
+        if u.id in hashes:
+            u.password = hashes[u.id]
+            u.save(update_fields=['password'])
+
+    filas = []
+    for u in usuarios:
+        p = perfil_de(u)
+        clave = nuevas.get(u.id, '')
+        estado = ('Inactivo' if not u.is_active else
+                  'Clave temporal pendiente' if p.debe_cambiar_password else 'Activa – clave propia')
+        filas.append([
+            'Superusuario' if u.is_superuser else tipos.get(p.tipo, p.tipo), p.region or 'Nacional',
+            u.get_full_name(), u.email or u.username, estado, clave,
+            ', '.join(SECCIONES[s] for s in p.secciones_visibles()),
+            'Sí', *('Sí' if p.puede(a) else 'No' for a in ('agregar', 'editar', 'borrar')),
+            'Sí' if p.region_forzada() else 'No',
+            u.last_login.strftime('%d-%m-%Y %H:%M') if u.last_login else 'Nunca',
+        ])
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Léeme'
+    for fila in [
+        ['Planilla de usuarios · Permisos SNAP'], [],
+        ['Generada', _dt.now().strftime('%d-%m-%Y %H:%M')], ['Por', yo.email or yo.username],
+        ['Ingreso', f'https://{request.get_host()}/login/'], [],
+        ['• Las claves temporales cambian cada vez que se descarga esta planilla: use siempre la última.'],
+        ['• Al primer ingreso, cada persona debe definir su propia clave (mínimo 8 caracteres).'],
+        ['• Quien ya definió su clave aparece como «Activa – clave propia» y no se modifica,'],
+        ['  salvo que usted la restablezca desde la plataforma (botón 🔑).'],
+        ['• Entregue cada clave solo a su titular y elimine esta planilla después de usarla.'],
+    ]:
+        ws.append(fila)
+    ws['A1'].font = Font(bold=True, size=14)
+    ws.column_dimensions['A'].width = 14
+    ws.column_dimensions['B'].width = 60
+
+    ws = wb.create_sheet('Usuarios')
+    ws.append(['Perfil', 'Región', 'Nombre', 'Correo (usuario)', 'Estado', 'Clave temporal', 'Secciones',
+               'Ver', 'Agregar', 'Editar', 'Borrar', 'Solo su región', 'Último ingreso'])
+    for c in ws[1]:
+        c.font = Font(bold=True, color='FFFFFF')
+        c.fill = PatternFill('solid', fgColor='013722')
+        c.alignment = Alignment(vertical='center')
+    for f in filas:
+        ws.append(f)
+    for col, ancho in zip('ABCDEFGHIJKLM', [24, 20, 34, 34, 24, 16, 60, 6, 9, 8, 8, 13, 17]):
+        ws.column_dimensions[col].width = ancho
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = ws.dimensions
+
+    plano = io.BytesIO()
+    wb.save(plano)
+    plano.seek(0)
+    cifrado = io.BytesIO()
+    OOXMLFile(plano).encrypt(clave_admin, cifrado)
+    resp = HttpResponse(cifrado.getvalue(),
+                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="Permisos_SNAP_usuarios_{_dt.now():%Y-%m-%d_%H%M}.xlsx"'
+    resp['Cache-Control'] = 'no-store'
+    return resp

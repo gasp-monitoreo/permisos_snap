@@ -740,6 +740,7 @@ function tramitesDelTipo({ todasLasRegiones = false } = {}) {
 }
 
 function setRegion(region) {
+  if (window.PERFIL?.solo_su_region) return;   // perfil restringido: su región es fija
   STATE.region = region === STATE.region ? null : region;   // clic en la activa = quitar filtro
   if (STATE.tramites.length) renderDashboard();
 }
@@ -747,6 +748,10 @@ function setRegion(region) {
 function renderFiltroRegiones() {
   const el = $('filtro-regiones');
   if (!el) return;
+  if (window.PERFIL?.solo_su_region) {
+    el.innerHTML = `<div class="reg-filtro-head"><span>Región de ${PERFIL.region} <small>su perfil muestra solo esta región</small></span></div>`;
+    return;
+  }
   const base = tramitesDelTipo({ todasLasRegiones: true });
   const n = nombre => base.filter(t => (t.regiones_list || []).includes(nombre)).length;
   const btn = (valor, codigo, etiqueta, cantidad) => {
@@ -1468,7 +1473,7 @@ function renderTablaEntregadas(filtroTema) {
     : entradas;
 
   if (!filtradas.length) {
-    const authMsg = STATE.driveNeedsAuth
+    const authMsg = STATE.driveNeedsAuth && window.PERFIL?.superusuario
       ? `<div style="margin-top:10px;padding:10px 14px;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;font-size:13px;color:#856404">
            ⚠️ Drive no autorizado. <a href="/auth/gmail/start" style="color:#856404;font-weight:700">Autorizar acceso</a> para vincular archivos de Google Drive.
          </div>`
@@ -1902,6 +1907,7 @@ function _uploadPanelHtml(t) {
           </div>
           ${avisoExt}
           ${archHtml}
+          ${!window.PERFIL?.permisos?.agregar ? '<div style="font-size:12px;color:var(--muted)">Su perfil no permite subir archivos.</div>' : `
           <div class="upload-drop-zone" id="dropzone-${t.id}"
                onclick="document.getElementById('file-input-${t.id}').click()"
                ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -1920,7 +1926,7 @@ function _uploadPanelHtml(t) {
               ⬆️ Subir archivos
             </button>
             <span id="upload-status-${t.id}" style="font-size:12px;color:var(--muted)"></span>
-          </div>
+          </div>`}
         </div>
       </td>
     </tr>`;

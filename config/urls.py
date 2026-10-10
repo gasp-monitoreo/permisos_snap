@@ -6,6 +6,7 @@ from tramites import views
 urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('cambiar-clave/', views.cambiar_clave, name='cambiar-clave'),
     path('', views.index, name='index'),
     path('api/', api.urls),
     path('investigaciones/', views.serve_investigacion, name='inv-root'),

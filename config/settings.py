@@ -30,6 +30,7 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'tramites.usuarios.CambioClaveMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
 ]
 
@@ -106,6 +107,9 @@ CACHES = {
 CEROFILAS_API_BASE = os.environ.get('CEROFILAS_API_BASE', 'https://conaf.cerofilas.gob.cl/backend/api')
 CEROFILAS_TOKEN    = os.environ.get('CEROFILAS_TOKEN',    '')
 GMAIL_REDIRECT_URI = os.environ.get('GMAIL_REDIRECT_URI', 'http://localhost/auth/gmail/callback')
+
+# Ingreso con el correo (sin distinguir mayúsculas)
+AUTHENTICATION_BACKENDS = ['tramites.usuarios.EmailBackend']
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'

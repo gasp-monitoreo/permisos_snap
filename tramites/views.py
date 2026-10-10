@@ -9,7 +9,41 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 @login_required
 def index(request):
-    return render(request, 'index.html')
+    import json
+    from .usuarios import perfil_de
+    perfil = perfil_de(request.user).como_dict()
+    return render(request, 'index.html', {'perfil': perfil, 'perfil_json': json.dumps(perfil)})
+
+
+@login_required
+def cambiar_clave(request):
+    """Cambio de clave: obligatorio con clave temporal, voluntario después."""
+    from django.contrib.auth import update_session_auth_hash
+    from .usuarios import perfil_de
+    perfil = perfil_de(request.user)
+    error = ''
+    if request.method == 'POST':
+        actual = request.POST.get('actual', '')
+        nueva = request.POST.get('nueva', '')
+        repetir = request.POST.get('repetir', '')
+        if not request.user.check_password(actual):
+            error = 'La clave actual no es correcta.'
+        elif len(nueva) < 8:
+            error = 'La nueva clave debe tener al menos 8 caracteres.'
+        elif nueva != repetir:
+            error = 'Las claves nuevas no coinciden.'
+        elif nueva == actual:
+            error = 'La nueva clave debe ser distinta de la actual.'
+        else:
+            request.user.set_password(nueva)
+            request.user.save(update_fields=['password'])
+            perfil.debe_cambiar_password = False
+            perfil.save(update_fields=['debe_cambiar_password', 'actualizado_en'])
+            update_session_auth_hash(request, request.user)   # mantiene la sesión abierta
+            return redirect('/')
+    return render(request, 'cambiar_clave.html', {
+        'obligatorio': perfil.debe_cambiar_password, 'error': error,
+        'nombre': request.user.get_full_name() or request.user.username})
 
 
 # ── Investigaciones file serving ──────────────────────────────────────────────
@@ -58,6 +92,7 @@ def _inv_archivos(base_path):
     return result
 
 
+@login_required
 @xframe_options_sameorigin
 def serve_investigacion(request, filepath=''):
     clean     = filepath.rstrip('/')
@@ -106,6 +141,17 @@ def login_fotos(request):
 
 # ── Gmail OAuth ───────────────────────────────────────────────────────────────
 
+def _solo_superusuario(vista):
+    from functools import wraps
+    @wraps(vista)
+    def envoltura(request, *a, **kw):
+        if not (request.user.is_authenticated and request.user.is_superuser):
+            return HttpResponse('Solo el superusuario puede vincular la cuenta de Google.', status=403)
+        return vista(request, *a, **kw)
+    return envoltura
+
+
+@_solo_superusuario
 def gmail_auth_start(request):
     from .email_utils import GMAIL_AVAILABLE, gmail_creds_file, start_gmail_oauth_flow
     import os
@@ -120,6 +166,7 @@ def gmail_auth_start(request):
     return redirect(auth_url)
 
 
+@_solo_superusuario
 def gmail_auth_callback(request):
     from .email_utils import finish_gmail_oauth_flow
     state        = request.session.get('gmail_state', '')

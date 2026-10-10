@@ -12,3 +12,4 @@ pymupdf>=1.24
 pillow>=10.0
 pyshp>=2.3
 shapely>=2.0
+msoffcrypto-tool>=5.4

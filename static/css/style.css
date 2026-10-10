@@ -1614,3 +1614,57 @@ tbody td { padding: 10px 14px; vertical-align: middle; }
   .chart-wide { grid-column: span 1; }
   .modal-box { border-radius: 12px; }
 }
+
+/* ── USUARIOS (administración) ───────────────── */
+.user-pill { text-decoration: none; }
+.user-region { font-weight: 500; color: var(--muted); margin-left: 2px; }
+a.sb-logout { text-decoration: none; }
+.usr-barra { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.usr-barra input, .usr-barra select {
+  border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font: 14px 'DM Sans', sans-serif;
+  background: var(--surface); color: var(--text); min-width: 220px;
+}
+.usr-espacio { flex: 1; }
+.usr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.usr-table td { vertical-align: middle; }
+.usr-table td small { color: var(--muted); }
+.usr-secs { max-width: 300px; }
+.usr-chip { display: inline-block; background: var(--em-50); border: 1px solid var(--em-200); color: var(--em-800);
+  border-radius: 99px; padding: 1px 8px; font-size: 11px; margin: 1px 2px; white-space: nowrap; }
+.usr-chip--total { background: var(--em-700); color: #fff; border-color: var(--em-700); }
+.usr-perm { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 6px;
+  font-size: 11px; font-weight: 700; margin-right: 3px; background: var(--slate-100); color: var(--slate-400); }
+.usr-perm.si { background: var(--em-600); color: #fff; }
+.usr-estado { font-size: 11.5px; font-weight: 700; border-radius: 99px; padding: 2px 9px; white-space: nowrap; }
+.usr-estado.activa { background: var(--em-100); color: var(--em-800); }
+.usr-estado.pendiente { background: #FBF0D9; color: #8A5A00; }
+.usr-estado.inactivo { background: var(--slate-100); color: var(--slate-500); }
+.usr-acc { white-space: nowrap; text-align: right; }
+.usr-acc button { background: none; border: 1px solid transparent; border-radius: 7px; cursor: pointer; font-size: 15px; padding: 3px 6px; }
+.usr-acc button:hover { background: var(--surface2); border-color: var(--border); }
+.usr-nota { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+.usr-form { display: flex; flex-direction: column; gap: 12px; }
+.usr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.usr-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.usr-form input:not([type=checkbox]), .usr-form select, #usr-form-planilla input {
+  border: 1px solid var(--border); border-radius: 9px; padding: 9px 11px; font: 14px 'DM Sans', sans-serif; color: var(--text); background: #fff;
+}
+.usr-form input:disabled { background: var(--surface2); color: var(--muted); }
+.usr-form fieldset { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px 12px; }
+.usr-form legend { font-size: 12.5px; font-weight: 700; color: var(--em-950); padding: 0 6px; }
+.usr-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.usr-form .usr-check { flex-direction: row; align-items: center; gap: 8px; font-weight: 500; color: var(--text); font-size: 13.5px; }
+.usr-check small { color: var(--muted); font-weight: 400; }
+.usr-acciones { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+.modal-box--chico { max-width: 460px; }
+#usr-form-planilla { display: flex; flex-direction: column; gap: 12px; }
+.usr-texto { font-size: 13.5px; line-height: 1.5; }
+.usr-aviso { color: #8A5A00; background: #FBF0D9; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; }
+.usr-error { color: #9B2C1F; font-size: 13px; min-height: 1em; }
+.usr-clave { display: flex; gap: 10px; align-items: center; margin: 12px 0; }
+.usr-clave code { flex: 1; font-size: 22px; letter-spacing: 1px; background: var(--surface2); border: 1px dashed var(--border);
+  border-radius: 10px; padding: 10px 14px; text-align: center; user-select: all; }
+@media (max-width: 700px) {
+  .usr-grid, .usr-checks { grid-template-columns: 1fr; }
+  .usr-barra input, .usr-barra select { min-width: 0; flex: 1; }
+}
