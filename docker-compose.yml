@@ -30,6 +30,7 @@ services:
     volumes:
       - ./Investigaciones:/app/Investigaciones
       - ./gmail_auth:/app/gmail_auth
+      - ./fotos_portada:/app/fotos_portada
     depends_on:
       db:
         condition: service_healthy

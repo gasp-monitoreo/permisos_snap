@@ -86,7 +86,15 @@ def _parse_date_flexible(s):
 
 
 def _clean_name(s):
-    return ' '.join(s.split()) if s else ''
+    """Normaliza espacios y descarta partes vacías que la API envía como None/"None"."""
+    if not s:
+        return ''
+    return ' '.join(p for p in str(s).split() if p not in ('None', 'null'))
+
+
+# Campo del formulario de Permiso de Investigación (proceso 1992) con el nombre completo,
+# p. ej. "nombre_de_el_la_investigadora_pr" (la API trunca la clave)
+_PAT_NOMBRE_INVESTIGADOR = _re.compile(r'^nombre_(?:de_)?(?:el_la_|del_|de_la_|la_)?investigador', _re.I)
 
 
 def _norm_nombre(s):
@@ -178,7 +186,7 @@ def normalize_tramite(t):
         ua = etapa.get('usuario_asignado') or {}
         nombre_ua = _clean_name(ua.get('nombres') or etapa.get('nombres') or '')
         nombre_completo_ua = _clean_name(
-            f"{nombre_ua} {ua.get('apellido_paterno','')} {ua.get('apellido_materno','')}"
+            f"{nombre_ua} {ua.get('apellido_paterno') or ''} {ua.get('apellido_materno') or ''}"
         )
         tarea = etapa.get('tarea') or {}
         info = {
@@ -206,17 +214,28 @@ def normalize_tramite(t):
         datos.get('correo_electronico') or datos.get('correo_electronico_grabacion1') or
         datos.get('email') or datos.get('correo') or datos.get('mail') or ''
     )
-    nombre_datos = _clean_name(
-        datos.get('nombres_coordinador') or datos.get('nombre_coordinador') or
-        datos.get('nombres') or datos.get('nombre') or ''
-    )
-    apellidos_datos = _clean_name(
-        datos.get('apellidos_coordinador') or datos.get('apellidos') or
-        (datos.get('paterno', '') + ' ' + datos.get('materno', ''))
-    )
-    nombre_completo = _clean_name(f'{nombre_datos} {apellidos_datos}')
+    # 1) Nombre completo del investigador/a responsable (formulario de investigación actual)
+    nombre_completo = _clean_name(next(
+        (v for k, v in datos.items() if v and _PAT_NOMBRE_INVESTIGADOR.match(k) and 'asociad' not in k),
+        '',
+    ))
+    # 2) Nombres + apellidos (coordinador de filmación, formularios antiguos)
+    if not nombre_completo:
+        nombre_datos = _clean_name(
+            datos.get('nombres_coordinador') or datos.get('nombre_coordinador') or
+            datos.get('nombres') or datos.get('nombre') or ''
+        )
+        apellidos_datos = _clean_name(
+            datos.get('apellidos_coordinador') or datos.get('apellidos') or
+            f"{datos.get('paterno') or ''} {datos.get('materno') or ''}"
+        )
+        nombre_completo = _clean_name(f'{nombre_datos} {apellidos_datos}')
+    # 3) Respaldo: quien llenó el formulario = primera etapa asignada a alguien externo
+    #    (las etapas siguientes son de funcionarios CONAF que revisan la solicitud)
     if not nombre_completo and etapas_info:
-        submitter = etapas_info[-1]
+        externos = [e for e in etapas_info
+                    if e.get('nombres') and not (e.get('email') or '').lower().endswith(('@conaf.cl', '@conaf.gob.cl'))]
+        submitter = externos[0] if externos else etapas_info[0]
         nombre_completo = submitter.get('nombres', '')
         if not email_sol:
             email_sol = submitter.get('email', '')
@@ -290,6 +309,25 @@ def normalize_tramite(t):
     estado_final = t.get('estado', '')
     recepcion_pendiente = False
 
+    # Decisión registrada por CONAF en el formulario (CeroFilas sigue diciendo "completado"):
+    #  - Investigación: aprueba_o_rechaza_reg = "no", o un motivo de rechazo informado, o
+    #    todas las decisiones regionales (aprueba_o_rechaza_<I…XVI>) son "rechaza".
+    #  - Filmación: aprobar_y_avanzar = "no" (el motivo va en ingrese_el_motivo).
+    _val = lambda k: str(datos.get(k) or '').strip().lower()
+    motivo_rechazo = (datos.get('motivo_de_rechazo_reg') or datos.get('motivos_del_rechazo_reg')
+                      or (datos.get('ingrese_el_motivo') if _val('aprobar_y_avanzar') == 'no' else '') or '')
+    regionales = [_val(k) for k in datos if _re.match(r'^aprueba_o_rechaza_[IVX]+$', k) and datos.get(k)]
+    rechazado_por_conaf = (
+        _val('aprueba_o_rechaza_reg') == 'no' or _val('aprobar_y_avanzar') == 'no'
+        or bool(str(motivo_rechazo).strip())
+        or (bool(regionales) and all(v == 'rechaza' for v in regionales))
+    )
+    if rechazado_por_conaf:
+        estado_final = 'rechazado'
+        # si la última etapa abierta es del solicitante, solo le falta abrir la respuesta
+        recepcion_pendiente = any(e.get('estado') == 'pendiente' and not _email_es_conaf(e.get('email'))
+                                  for e in etapas_info)
+
     if estado_final != 'rechazado':
         for _e in etapas_info:
             if not _pat_rechazo.search(_e.get('tarea_nombre', '')):
@@ -304,8 +342,14 @@ def normalize_tramite(t):
 
     if estado_final == 'pendiente' and completadas > 0:
         pendientes = [e for e in etapas_info if e.get('estado') == 'pendiente']
+        # a) La única etapa abierta es del solicitante: CONAF ya terminó, falta que lo abra.
         if pendientes and all(not _email_es_conaf(ep.get('email')) for ep in pendientes):
             recepcion_pendiente = True
+            estado_final = 'completado'
+        # b) Todas las etapas están completadas pero CeroFilas sigue marcando "pendiente":
+        #    el trámite volvió al solicitante y aún no abre su perfil. También es finalizado.
+        elif not pendientes and completadas == total_etapas:
+            recepcion_pendiente = not _email_es_conaf(etapas_info[-1].get('email'))
             estado_final = 'completado'
 
     proceso_id_val = t.get('proceso_id')
@@ -345,6 +389,7 @@ def normalize_tramite(t):
         'etapas_completadas':  completadas,
         'borrador':            borrador,
         'recepcion_pendiente': recepcion_pendiente,
+        'motivo_rechazo':      str(motivo_rechazo).strip()[:1000],
         'areas_protegidas':    areas_protegidas,
         'archivo_autorizacion': (
             datos.get('autorizacion') or datos.get('autorizacion_firmada') or

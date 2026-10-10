@@ -8,17 +8,17 @@
 // ─── Estado global ────────────────────────────────────────────────────────────
 const STATE = {
   tramites: [],
-  tramitesFiltrados: [],
   procesos: [],
   procesoMap: {},
-  charts: {},
   searchType: 'id',
   investigaciones: {},
   duplicados: new Map(),
   complianceData: [],        // Permisos históricos (>3 años) para matching de carpetas
   portadaHistorico: [],      // TODOS los permisos de inv+film para los gráficos de Portada
   fromCache: false,
-  dashFilter: 'all',         // 'all' | 'inv' | 'film'
+  dashFilter: 'inv',         // 'all' | 'inv' | 'film' — sigue a STATE.tipo
+  tipo: 'inv',               // sección activa del menú: 'inv' | 'film'
+  region: null,              // filtro de región del Resumen (nombre en REGIONES_CHILE) o null
   driveNeedsAuth: false,
 };
 
@@ -489,6 +489,7 @@ async function loadTramites(params = {}) {
   const data = await fetchJSON(`/api/tramites?${qs}`);
   if (!data.ok) throw new Error(data.error);
   if (data.from_cache) STATE.fromCache = true;
+  STATE.actualizadoEn = data.actualizado_en || null;
   return data.data || [];
 }
 
@@ -578,6 +579,8 @@ async function init() {
       if (!resp.ok) throw new Error(resp.error);
       if (resp.from_cache) { STATE.fromCache = true; cacheSource = resp.cache_source; }
       if (resp.circuit_open) circuitOpen = true;
+      STATE.actualizadoEn = resp.actualizado_en || null;
+      STATE.rangoCargado = `${desde}-${hasta}`;
       STATE.tramites = filtrarRango(resp.data || []);
       cargado = true;
     } catch {
@@ -603,13 +606,10 @@ async function init() {
       return;
     }
 
-    STATE.tramitesFiltrados = [...STATE.tramites];
     STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
     updateLastUpdate();
     renderDashboard();
     renderPortada();
-    renderTramitesTable(STATE.tramitesFiltrados);
-    populateRegionSelect();
 
     // Mostrar banner solo si la API está caída o si servimos datos parciales (portada_historico)
     if (circuitOpen || cacheSource === 'portada_historico') showCacheBanner(cacheSource);
@@ -625,7 +625,12 @@ function rangoActual() {
 }
 
 function updateLastUpdate() {
-  $('last-update').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-CL');
+  // Hora real de los datos (pueden venir de la caché del servidor)
+  const d = STATE.actualizadoEn ? new Date(STATE.actualizadoEn) : new Date();
+  const hoy = d.toDateString() === new Date().toDateString();
+  $('last-update').textContent = 'Actualizado: ' + (hoy
+    ? d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }));
 }
 
 // Agrupación canónica de procesos — cubre todos los IDs históricos
@@ -659,25 +664,7 @@ function populateProcesoSelects() {
     .map(([key, g]) => `<option value="${key}">${g.label}</option>`)
     .join('');
   const html = '<option value="">Todos</option>' + opts;
-  $('filter-proceso').innerHTML = html;
   if ($('export-proceso')) $('export-proceso').innerHTML = html;
-}
-
-function populateRegionSelect() {
-  // Recolectar regiones individuales de regiones_list (no el campo combinado "region")
-  const regionesSet = new Set();
-  STATE.tramites.forEach(t => {
-    (t.regiones_list || []).forEach(r => { if (r) regionesSet.add(r); });
-  });
-  // Ordenar de norte a sur según REGIONES_CHILE
-  const ordenadas = REGIONES_CHILE
-    .map(r => r.nombre)
-    .filter(n => regionesSet.has(n));
-  // Agregar al final cualquier región que no esté en REGIONES_CHILE (por si acaso)
-  regionesSet.forEach(r => { if (!ordenadas.includes(r)) ordenadas.push(r); });
-
-  const opts = ordenadas.map(r => `<option value="${r}">${r}</option>`).join('');
-  $('filter-region').innerHTML = '<option value="">Todas</option>' + opts;
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
@@ -702,7 +689,7 @@ function _setSplit(id, inv, film) {
 }
 
 function renderDashboard() {
-  const all  = STATE.tramites;
+  const all  = filtrarPorRegion(STATE.tramites);
   const invs = all.filter(t => IDS_INVESTIGACION.has(t.proceso_id));
   const films= all.filter(t => IDS_FILMACION.has(t.proceso_id));
 
@@ -726,49 +713,137 @@ function renderDashboard() {
   _setSplit('kpi-avance-split',     si.avgAvance + '%', sf.avgAvance + '%');
   _setSplit('kpi-vencidos-split',   si.vencidos,    sf.vencidos);
 
-  renderChartEstados(invs, films, ts, f);
-  renderChartProcesos(invs, films, ts, f);
-  renderChartAvance(invs, films, ts, f);
+  renderFiltroRegiones();
+  // La matriz regional siempre muestra todas las regiones del tipo (destacando la elegida)
+  renderResumenVisual(ts, f, tramitesDelTipo({ todasLasRegiones: true }), STATE.region);   // static/js/resumen.js
   renderTablaVencimientos();
   renderTablaRecientes();
-  renderTiemposRespuesta();
   renderDuplicadosSection();
 }
 
 const IDS_INVESTIGACION = new Set([517, 692, 1992]);
 const IDS_FILMACION     = new Set([437, 585, 631, 632, 672]);
 
+// ─── Tipo activo (Investigación / Filmación y Fotografía) ─────────────────────
+const GRUPO_DE_TIPO = { inv: 'investigacion', film: 'filmacion' };
+
+// Filtro por región del Resumen (null = todas). Un trámite multirregional cuenta en cada región.
+function filtrarPorRegion(lista) {
+  if (!STATE.region) return lista;
+  return lista.filter(t => (t.regiones_list || []).includes(STATE.region));
+}
+
+function tramitesDelTipo({ todasLasRegiones = false } = {}) {
+  const ids = STATE.tipo === 'film' ? IDS_FILMACION : IDS_INVESTIGACION;
+  const delTipo = STATE.tramites.filter(t => ids.has(t.proceso_id));
+  return todasLasRegiones ? delTipo : filtrarPorRegion(delTipo);
+}
+
+function setRegion(region) {
+  STATE.region = region === STATE.region ? null : region;   // clic en la activa = quitar filtro
+  if (STATE.tramites.length) renderDashboard();
+}
+
+function renderFiltroRegiones() {
+  const el = $('filtro-regiones');
+  if (!el) return;
+  const base = tramitesDelTipo({ todasLasRegiones: true });
+  const n = nombre => base.filter(t => (t.regiones_list || []).includes(nombre)).length;
+  const btn = (valor, codigo, etiqueta, cantidad) => {
+    const activo = (STATE.region || null) === valor;
+    return `<button class="reg-btn${activo ? ' activo' : ''}${cantidad === 0 ? ' vacio' : ''}"
+      data-region="${valor || ''}" aria-pressed="${activo}" title="${etiqueta}: ${cantidad} solicitudes">
+      ${codigo ? `<span class="reg-cod">${codigo}</span>` : ''}<span class="reg-nom">${etiqueta}</span><span class="reg-n">${cantidad}</span>
+    </button>`;
+  };
+  el.innerHTML = `
+    <div class="reg-filtro-head">
+      <span>Filtrar por región <small>de norte a sur</small></span>
+      ${STATE.region ? `<button class="reg-limpiar" data-region="">✕ Quitar filtro: ${STATE.region}</button>` : ''}
+    </div>
+    <div class="reg-btns">
+      ${btn(null, '', 'Todas', base.length)}
+      ${REGIONES_CHILE.map(r => btn(r.nombre, r.codigo, r.nombre, n(r.nombre))).join('')}
+    </div>`;
+}
+
+function setTipo(tipo) {
+  if (tipo === STATE.tipo) return;
+  STATE.tipo = tipo;
+  STATE.dashFilter = tipo;
+  if (STATE.tramites.length) {
+    renderDashboard();
+  }
+}
+
 // ─── Taxonomía temática ───────────────────────────────────────────────────────
 // Orden importa: el primer match gana. Lo más específico va antes de lo general.
+// Las palabras clave se comparan sobre texto normalizado (minúsculas, sin tildes,
+// rodeado de espacios) e incluyen términos en inglés: muchos títulos son de papers.
 const TEMAS_INV = [
+  // ── Proyectos e Infraestructura (líneas base de obras, minería, energía) ─────
+  { tema: 'Proyectos e Infraestructura',
+    kw: ['data center','campus','plan de reparacion','loteo','urbaniz','edificac','proyecto minero','minero ','mineros ','mineria','minera ','mining','mina ','exploracion minera',
+         'sondaje','perforacion','drilling','pozo ','pozos ','carretera','camino basico','vialidad',
+         'ruta 5','ruta c','ruta k','ruta a','ruta b','ruta d','ruta x','ruta y','ruta s','ruta t','ruta r','ruta v',
+         'linea de transmision','tendido electrico','subestacion','central hidroelectrica',
+         'hidroelectric','parque eolico','fotovoltaic','concesion','estudio de ingenieria','ingenieria ',
+         'infraestructura','infrastructure','telecomunicac','antena','fibra optica','puente ',
+         'estudio de impacto','declaracion de impacto','pas 160','andina minerals','gold ','lobo marte',
+         'agua potable rural','inmobiliar','oleoducto','gasoducto','acueducto','muelle','borateras'] },
+
   // ── Aves (antes de Fauna Terrestre para no perder en el grupo general) ──────
   { tema: 'Aves',
-    kw: ['ornitolog','avifauna','passeriforme','pelecaniforme','spheniscidae',
+    kw: ['ornitolog','avifauna','passeriforme','pelecaniforme','spheniscidae','sphenisc',
          'pinguin','condor','flamenco','albatros','petrel','gaviotin','cauquen',
          'quetru','rapaz','rapaces','halcon','aguila','buho','lechuza',
          'nidificac','canto de ave','migracion de ave','ruta migratoria',
          ' ave ',' aves ','parulidae','accipitridae','laridae','anatidae',
          'pato ','patos ','garza','becada','becacina','churrete','tapaculo',
-         'picaflor','loro tricahue','cometocino','churrin','diuca'] },
+         'picaflor','loro tricahue','cometocino','churrin','diuca',
+         ' bird','songbird','seabird','shorebird','avian','penguin','raptor',' owl','hummingbird',
+         'plover','chorlo','nest ','nesting','waterbird','pelican','cormoran','cormorant','rhea','nandu','huemul '] },
 
   // ── Mamíferos Marinos (antes de Ciencias del Mar) ──────────────────────────
   { tema: 'Mamíferos Marinos',
     kw: ['cetaceo','delfin','ballena','orca','lobo marino','lobo de mar',
          'foca ','focas','otaria','pinnipedo','elefante marino','nutria de mar',
-         'chungungo','lontra felina','mamifero marino','mamiferos marinos'] },
+         'chungungo','lontra felina','mamifero marino','mamiferos marinos',
+         'whale','dolphin','sea lion','fur seal',' seal ','marine mammal','cetacean'] },
+
+  // ── Mamíferos Terrestres ──────────────────────────────────────────────────
+  { tema: 'Mamíferos Terrestres',
+    kw: ['mamifero','mammal','puma','guanaco','vicuna','huemul','pudu','zorro',' fox','culpeo','chilla',
+         'roedor','rodent','degu','octodon','abrocoma','chinchilla','vizcacha','tuco tuco','ctenomys',
+         'murcielago','quiroptero',' bat ',' bats ','myotis','tadarida','histiotus','lasiurus',
+         'marsupial','monito del monte','dromiciops','felino','felid','gato andino','guina','kodkod',
+         'quique','huillin','vison','mink','castor','beaver','jabali','wild boar','ciervo','deer',
+         'camelido','camelid','carnivoro','carnivore','radiocollar','radio collar','camara trampa',
+         'camera trap','fototrampeo','micromamifero','small mammal','liebre','conejo','rabbit','hare'] },
 
   // ── Herpetología (antes de Fauna Terrestre) ────────────────────────────────
   { tema: 'Herpetología',
     kw: ['herpeto','reptil ','reptiles','lagartija','lagarto','culebra',
          'serpiente','anfibio','rana ','ranas ','sapo ','sapos ','salamandra',
          'pleurodema','rhinella','liolaemus','callopistes','tachymenis',
-         'philodryas','alsodes','batrachyla'] },
+         'philodryas','alsodes','batrachyla','telmatobius','pristidactylus','phymaturus',
+         'reptile','lizard',' frog','toad','amphibian','snake','gecko'] },
 
   // ── Ictiología / Peces ─────────────────────────────────────────────────────
   { tema: 'Ictiología / Peces',
     kw: ['ictio','pez ','peces ','trucha','salmon','salmones','pejerrey',
          'lamprea','bacalao','merluza','corvina','puye','galaxia','galaxiid',
-         'percilia','trichomycterus','cheirodon','odontesthes','piscicola'] },
+         'percilia','trichomycterus','cheirodon','odontesthes','piscicola',
+         ' fish','trout','salmonid','ichthy'] },
+
+  // ── Salud / Zoonosis (antes de Entomología: vectores, parásitos) ──────────
+  { tema: 'Salud / Zoonosis',
+    kw: ['zoonos','zoonot','patogen','pathogen','enfermedad','disease','epidemiolog',
+         'infeccion','infection','hantavirus','rabia','influenza aviar','avian influenza','sarna',
+         'antimicrob','antibiotic','toxoplasm','tripanosom','trypanosom','chagas','vinchuca','triatom',
+         'one health','una salud','salud publica','public health','health risk','riesgo sanitario',
+         'parasito','parasite','parasit ','helminto','helminth','ectoparasit','garrapata','tick borne',
+         'virus ','viral ','viroma','virome','sanitari'] },
 
   // ── Entomología / Invertebrados ────────────────────────────────────────────
   { tema: 'Entomología / Invertebrados',
@@ -778,36 +853,58 @@ const TEMAS_INV = [
          'aracnido','arana','escorpion','artropodo','crustaceo',
          'invertebrado','molusco','gasteropodo','bivalvo','cefalopodo',
          'equinodermo','erizo','estrella de mar','pepino de mar','anelido',
-         'lombriz','oligoqueto','nematodo'] },
+         'lombriz','oligoqueto','nematodo','tenebrionid','gyriosomus','opilion',
+         'insect','beetle',' bee ',' bees ','wasp',' ant ',' ants ','moth','butterfl','spider',
+         'arachnid','invertebrate','arthropod','mollus','snail','scorpion','pollinat','polinizador',
+         'polinizacion','hymenoptera','coleoptera','lepidoptera','crustacea','isopod','copepod',
+         'amphipod','caddisfl','trichoptera','plecoptera','ephemeroptera','acaro','mite '] },
+
+  // ── Microbiología ──────────────────────────────────────────────────────────
+  { tema: 'Microbiología',
+    kw: ['saccharomyces','levadura','yeast','sideroforo','siderophore','halophil','halofil','bioproduct','bioprospecc','bioprospect','microb','bacteria','bacteri','arquea','archaea','microorganism','microbiom',
+         'cianobacteria','cyanobacteria','extremofil','extremophil','biofilm','tapete microbiano',
+         'microbial mat','estromatolit','stromatolit','metagenom','biotecnolog','biotechnolog',
+         'endofit','endophyt','rizobacteria','rhizobacteri','geomicrobiolog','marte',' mars '] },
 
   // ── Micología / Líquenes / Briófitas ──────────────────────────────────────
   { tema: 'Micología / Líquenes',
-    kw: ['hongo','hongos','micolog','micelio','espora','basidiomiceto',
+    kw: ['funga ','hongo','hongos','micolog','micelio','espora','basidiomiceto',
          'ascomiceto','macromiceto','ectomicorriza','micorriza','trufa',
          'boletus','amanita','cortinarius','suillus','fungo',
          'liquen','liquenes','liquenolog','cladonia','usnea','peltigera',
          'briofit','briolog','hepatica','antocerota','musgo ','musgos ',
-         'esporofito','sphagnum'] },
+         'esporofito','sphagnum','fungi','fungal','fungus','lichen','mycorrhiz','mushroom',
+         'bryophyt',' moss','holobiont','verrucaria','lecanora','sticta','rinodina','acarospora'] },
 
   // ── Botánica / Flora ───────────────────────────────────────────────────────
   { tema: 'Botánica / Flora',
-    kw: ['botanic','florist','fitosociolog','dendrolog','fitoplancton','fitobentos',
+    kw: ['metabolit','fitoquim','phytochem','alcaloide','alkaloid','polifenol','polyphenol','bioactiv','germoplasma','germplasm','aceae ','helecho',' fern','desierto florido','rhodophiala','geofita','bulbo','botanic','florist','fitosociolog','dendrolog','fitoplancton','fitobentos',
          'flora ','planta ','plantas ','vegeta','arbol','arboles','arbusto',
          'matorral','hierba','herbaceo','pasto ','pastos ','bosque',
-         'alerce','cipres','coigue','lenga','nirre','notofagus','pino ',
+         'alerce','cipres','coigue','lenga','nirre','notofagus','nothofagus','pino ',
          'eucalipto','graminea','gramineas','bromelia','tillandsia',
-         'cactacea','suculenta','xerofit','turbera','pompon','sphagnum',
+         'cactacea','suculenta','xerofit','turbera','pompon',
          'fitomasa','cobertura vegetal','pradera','estepario','alga ',
-         'algas ','kelp','macroalga','fitoplancton'] },
+         'algas ','kelp','macroalga','semilla','plantula','germinac','orquidea','araucaria',
+         'polylepis','quenoa','tamarugo','prosopis','algarrobo','copiapoa','eriosyce','chloraea',
+         'bomarea','ugni','quintral','fotosint','herbario','dendrocronolog','anillos de crecimiento',
+         ' plant',' tree ',' trees ','forest','shrub',' seed','seedling','orchid','flower','pollen',
+         ' leaf',' leaves','wood ','mistletoe','photosynth','vegetation','canopy','tree ring','herbarium',
+         'sclerophyll','esclerofil','woody','botany','grassland','peatland'] },
 
   // ── Ecología ───────────────────────────────────────────────────────────────
   { tema: 'Ecología',
     kw: ['ecolog','ecosistema','biodiversidad','abundancia','densidad poblac',
          'dinamica poblac','comunidad biol','estructura de comunidad',
-         'cadena trófica','red trofica','nicho','habitat','interacciones',
+         'cadena trofica','red trofica','nicho','habitat','interacciones',
          'depredacion','competencia','mutualismo','parasitismo','simbiosis',
          'trofico','productividad primaria','biomasa','riqueza de especi',
-         'diversidad alfa','diversidad beta','indice de diversidad'] },
+         'diversidad alfa','diversidad beta','indice de diversidad',
+         'ecology','ecosystem','biodiversity','species distribution','distribucion de especies',
+         'invasive','invasora','introduced species','especie introducida','resilien','disturbance',
+         'perturbac','wildfire','incendio','facilitation','facilitacion','succession','sucesion',
+         'niche','gradient','gradiente','tolerance','tolerancia','functional trait','rasgos funcional',
+         'food web','trophic','predator','depredador','population','poblacion','assemblage','ensamble'] },
 
   // ── Genética / Genómica ────────────────────────────────────────────────────
   { tema: 'Genética / Genómica',
@@ -815,37 +912,59 @@ const TEMAS_INV = [
          'adn ','dna ','microsatelit','haplotip','secuencia','genotip',
          'fenotip','transcriptoma','proteoma','bioinformatic','pcr ',
          'marcador molecular','divergencia genetica','flujo genico',
-         'estructura genetica','variacion genetica','snp '] },
+         'estructura genetica','variacion genetica','snp ','phylogen','genom','sequenc',
+         'delimitacion de especies','species delimitation','taxonomi','sistematica','systematic',
+         'barcod','edna','adn ambiental','environmental dna','nueva especie','new species',
+         'revalidacion','especie nueva','phenotyp','phenotypic'] },
 
   // ── Arqueología / Patrimonio ───────────────────────────────────────────────
   { tema: 'Arqueología / Patrimonio',
     kw: ['arqueolog','patrimoni','prehispan','rupestre','petroglifo',
-         'alfareria','ceramica','sitio arqueol','conchale','tmidero',
+         'alfareria','alfarer','ceramica','sitio arqueol','conchale','tmidero',
          'etnoarqueolog','paleoindio','cazador recolector','arte rupestre',
          'pinturas rupestres','mortero','lithico','litico','fauna arqueol',
-         'carbono 14','datacion','excavacion','prospeccio'] },
+         'carbono 14','datacion','excavacion','prospeccio','archaeolog','archeolog','heritage',
+         'geoglifo','geoglyph','rock art','prehistor','ancient','historia ','historic','historico',
+         'museo','bioarqueolog','momia','mummy','inka','inca '] },
+
+  // ── Ciencias Sociales / Comunidades ───────────────────────────────────────
+  { tema: 'Ciencias Sociales / Comunidades',
+    kw: ['toponim','arriero','comportamiento','conducta','behavio','psicolog','psycholog','intencion','deuda de la tierra','mongen','cosmovision','social','socio','comunidad local','comunidades','indigen','mapuche','aymara','atacamen',
+         'lickanantay','likan antay','rapa nui','kawesqar','yagan','pehuenche','huilliche','diaguita',
+         'etnograf','antropolog','sociolog','gobernanza','governance','politica publica','public polic',
+         'percepcion','perception','conflict','agricultur','agrifood','alimentari','food ','economia',
+         'economic','genero','gender','participacion','participat','valores','values','cultura',
+         'cultural','territorio','territorial','water conflict','derecho','legal ','juridic',
+         'educacion','education','escuela','school','tesis de pregrado','memoria de titulo'] },
 
   // ── Glaciología / Criosfera ────────────────────────────────────────────────
   { tema: 'Glaciología / Criosfera',
     kw: ['glaciar','glaciolog','glaciares','criosfera','hielo ','campo de hielo',
          'permafrost','periglacial','nieve ','nevado','deshielo','retroceso glaciar',
-         'masa de hielo','lengua glaciar','frente glaciar','balance de masa'] },
+         'masa de hielo','lengua glaciar','frente glaciar','balance de masa',
+         'glacier','glacial','icefield','ice field',' ice ','snow','cryospher','rock glacier',
+         'glaciar rocoso','proglacial','calving'] },
 
   // ── Recursos Hídricos / Limnología ────────────────────────────────────────
   { tema: 'Recursos Hídricos / Limnología',
     kw: ['limnolog','hidrologi','cuenca hidro','caudal','calidad del agua',
          'aguas continen','lago ','lagos ','laguna ','lagunas ','rio ','rios ',
-         'arroyo','estero','humedal','turbera','fitoplancton lacustre',
+         'arroyo','estero','humedal','fitoplancton lacustre',
          'zooplancton','macroinvertebrado acuat','peces de agua dulce',
-         'acuifer','aguas subterraneas','riego','escorrentia'] },
+         'acuifer','aguas subterraneas','riego','escorrentia','hydrolog',' water',' river',
+         ' lake','lagoon','wetland','stream','groundwater','aquifer','salar ','salares',
+         'freshwater','bofedal','vega ','vegas ','agua ','hidrogeolog','hydrogeolog','cuenca'] },
 
   // ── Clima / Meteorología ──────────────────────────────────────────────────
   { tema: 'Clima / Meteorología',
-    kw: ['clima ','climatolog','cambio climatico','temperatura ','precipitacion',
+    kw: ['hiperarid','hyperarid','nitrogen deposition','deposicion de nitrogeno','biogeoquim','biogeochem','variables ambientales','clima ','climatolog','cambio climatico','temperatura ','precipitacion',
          'meteo','fenologia','estacion climatica','patron climatico',
          'radiacion solar','viento ','presion atmosfer','humedad relativa',
          'sequia','ola de calor','evento extremo','enso','el nino','la nina',
-         'variabilidad climatica','microclima'] },
+         'variabilidad climatica','microclima','climate','climatic','drought','precipitation',
+         'temperature','weather','fog ','niebla','camanchaca','atmospher','atmosfer','aerosol',
+         'co2','carbon','carbono','greenhouse','emisiones','emission','paleoclim','astronom',
+         'cielo oscuro','dark sky','contaminacion luminica','light pollution'] },
 
   // ── Geografía / Geología / Suelos ─────────────────────────────────────────
   { tema: 'Geografía / Geología',
@@ -853,7 +972,12 @@ const TEMAS_INV = [
          'suelo ','suelos ','sediment','erosion','relieve','litolog',
          'tectonica','volcan','vulcanolog','sismolog','terremoto',
          'paisaje','cartografi','sig ','gis ','teledeteccion','sensores remotos',
-         'fotointerpretacion','topografi','altimetria','batimetria'] },
+         'fotointerpretacion','topografi','altimetria','batimetria',
+         'geology','geomorpholog','geochem','geoquim','volcanic','magma','caldera','lava ','eruption',
+         'tephra','tefra','mineral','gabro','granit','skarn','rock ',' roca','fault','falla ',
+         'sismic','seismic','earthquake','geotherm','geotermi','soil','landslide','remocion en masa',
+         'paleontolog','fosil','fossil','geoparque','cueva','cave ','spatial','espacial','remote sensing',
+         'mapping','dron','drone','lidar','satelit','landscape','tectonic','andean','andes'] },
 
   // ── Ciencias del Mar / Oceanografía ───────────────────────────────────────
   { tema: 'Ciencias del Mar',
@@ -861,22 +985,26 @@ const TEMAS_INV = [
          'intermareal','submareal','bentos','bentico','macrobentos',
          'litoral','costa ','costas ','playa ','playas ','fiordo',
          'marino ','marina ','marinos ','marinas ','algas marinas',
-         'kelp','huiro','luga','submarino','buceo'] },
+         'kelp','huiro','luga','submarino','buceo','marine','ocean',' sea ','coastal','coast ',
+         'fjord','benthic','intertidal','seaweed','coral','changle','estuar','maritorio'] },
 
   // ── Monitoreo Ambiental ────────────────────────────────────────────────────
   { tema: 'Monitoreo Ambiental',
     kw: ['monitoreo','contaminac','microplastico','metal pesado','mercurio',
          'plomo ','arsenico','residuo','basura','impacto ambiental',
-         'evaluacion ambiental','linea base','presencia humana',
-         'perturbacion','fragmentacion','deforestacion'] },
+         'evaluacion ambiental','linea base','linea de base','presencia humana',
+         'perturbacion','fragmentacion','deforestacion','monitoring','pollution','pollutant',
+         'microplastic','heavy metal','impact','baseline','environmental assessment','fauna silvestre',
+         'flora y fauna','fauna y flora','censo','census','catastro','inventario','inventory'] },
 
   // ── Turismo / Uso Público ─────────────────────────────────────────────────
   { tema: 'Turismo / Uso Público',
     kw: ['turismo','turista','visitante','recreacion','uso publico',
          'capacidad de carga','carga visit','gestion de visit',
          'sendero','senderismo','trekking','camping','impacto del turismo',
-         'interpretacion ambiental','educacion ambiental','percepcion',
-         'satisfaccion del visit','voluntariado'] },
+         'interpretacion ambiental','educacion ambiental',
+         'satisfaccion del visit','voluntariado','tourism','visitor','recreation',' trail',
+         'rescate','rescue','incidente','accidente','seguridad','montanis','andinismo','escalada'] },
 
   // ── Manejo y Conservación ─────────────────────────────────────────────────
   { tema: 'Manejo y Conservación',
@@ -885,51 +1013,90 @@ const TEMAS_INV = [
          'reintroducc','repoblacion','restauracion ecolog','revegetacion',
          'control de especie invasora','especie invasora','especie exotica',
          'erradicacion','plan de manejo','corredor biologico',
-         'area protegida','parque nacional','reserva'] },
+         'area protegida','areas protegidas','parque nacional','reserva','conservation','management',
+         'protected area','threatened','endangered','restoration','restauracion','reforestac',
+         'santuario','monumento natural','biosphere','biosfera'] },
 ];
 
 const TEMAS_FILM = [
+  { tema: 'Registro Científico / Técnico',
+    kw: ['lahar','peligro','riesgo','microzonificac','rewilding','fundacion','cientific','investigacion','research','estudio ','study','monitoreo','monitoring',
+         'levantamiento','topografic','escanear','escaneo','lidar','arqueolog','geoglifo',
+         'equipo cientifico','tesis','muestreo','sampling','diagnostico','catastro','dron para',
+         'registro de flora','registro de fauna','fotogrametri','ortofoto','modelo 3d'] },
+  { tema: 'Turismo / Promoción de Destino',
+    kw: ['turismo','turistic','tourism','destino','destination','hotel','lodge','hostal','viaje',
+         'travel','itinerario','difusion de','promocion del destino','promocionar','prochile',
+         'sernatur','ruta de los parques','conocer patagonia','en familia','vacaciones','agencia',
+         'tour ','tours ','excursion','experiencia turistica','marca chile','imagen pais'] },
+  { tema: 'Deporte / Aventura',
+    kw: ['escalad','mujeres en altura','cumbre','summit','deporte','sport','ski ','esqui','snowboard','freeride','maraton','marathon','trail running',
+         'carrera ','race ','rugby','futbol','ciclismo','bike','mountain bike','escalada','climbing',
+         'montanismo','andinismo','alpin','kayak','rafting','surf','buceo','diving','outdoor',
+         'aventura','adventure','expedicion','expedition','trekking','travesia','parapente'] },
+  { tema: 'Arte / Danza / Música',
+    kw: ['videodanza','danza','dance','musica','music','videoclip','cancion','song','album',
+         'artista','artist','arte ','art ','performance','instalacion','libro objeto','fotolibro',
+         'poesia','poema','teatro','orfebre','artesania','pintura','ilustracion','residencia artistica'] },
   { tema: 'Documental de Naturaleza',
-    kw: ['naturaleza','wildlife','vida silvestre','documental','fauna silvestre',
+    kw: ['mastodonte','postglacial','bosque nativo','aniversario del parque','conmemoracion','centenario','100 anos','naturaleza','wildlife','vida silvestre','documental','fauna silvestre',
          'flora silvestre','avistamiento','ecosistema','biodiversidad',
-         'especie ','animal ','parque nacional','reserva natural'] },
+         'especie ','animal ','parque nacional','reserva natural','nature','documentary',
+         'restauracion','conservacion','glaciar','humedal','paisaje','landscape','patagonia'] },
   { tema: 'Cine / Ficción',
     kw: ['largometraje','cortometraje','ficcion','pelicula','drama','thriller',
          'serie ','teleserie','guion','actores','rodaje','produccion cinemat',
-         'animacion','videoclip'] },
+         'animacion','film ','movie','feature','fiction'] },
   { tema: 'Publicidad / Comercial',
     kw: ['publicidad','comercial','marca ','producto ','campana publicitar',
-         'spot ','aviso ','auspicio','marketing','promocion','branding'] },
+         'spot ','aviso ','auspicio','marketing','promocion','branding','campana audiovisual',
+         'campaign','brand','advertising','commercial','catalogo','catalog','empresa','corporativ'] },
   { tema: 'Contenido Educativo',
     kw: ['educativ','educacion','divulgacion','escolar','universitario',
          'pedagogico','ciencia','museo','exposicion educativa','recurso didactico',
-         'mediacion','taller','capacitacion'] },
+         'mediacion','taller','capacitacion','educar','estudiantil','estudiantes','students',
+         'biblioteca','aniversario','concurso','explora'] },
   { tema: 'Fotografía',
-    kw: ['fotografi','fotografo','retrato','galeria','libro fotografi',
+    kw: ['astropatrimon','observacion astronom','cielo nocturno','night sky','fotografi','fotografo','retrato','galeria','libro fotografi',
          'exposicion fotografica','fotoperiodismo','foto ','fotos ','imagen ',
-         'paisaje fotografi','wildlife photo'] },
+         'paisaje fotografi','wildlife photo','photo','astrofotograf','timelapse','time lapse',
+         'equinoccio','solsticio','eclipse'] },
   { tema: 'Reportaje / Periodismo',
-    kw: ['reportaje','periodismo','noticias','prensa','diario','revista',
+    kw: ['nhk','chilevision','tvn','canal 13','mega ','programa ','capitulo','episodio','reportaje','periodismo','noticias','prensa','diario','revista',
          'entrevista','nota period','cobertura period','medio de comunicacion',
-         'television','radio ','podcast'] },
+         'television','radio ','podcast','periodista','journalist','canal ','tv ','deutsche welle',
+         'bbc','cnn','national geographic','noticiero','cronica'] },
   { tema: 'Contenido Digital / RRSS',
     kw: ['redes sociales','instagram','youtube','tiktok','contenido digital',
          'influencer','streaming','vlog','video digital','plataforma digital',
-         'contenido audiovisual','short film','reels'] },
+         'contenido audiovisual','short film','reels','creadores de contenido','creador de contenido',
+         'live ','en vivo','internet satelital','plataformas digitales','facebook'] },
 ];
 
 const PALETA_TEMAS = [
-  '#1B5E20','#1565C0','#E65100','#6A1B9A','#B71C1C',
-  '#00695C','#558B2F','#4527A0','#AD1457','#37474F',
-  '#F57F17','#0277BD','#4E342E','#00838F','#283593',
-  '#EF6C00','#2E7D32','#880E4F','#004D40','#E65100',
-  '#1A237E','#BF360C','#33691E','#4A148C','#006064',
+  // Colores del logo Permisos SNAP (bosque, lago, desierto, cordillera)
+  '#013722','#0155A0','#D9A13B','#347A17','#026B59',
+  '#2DA9EE','#B9412F','#8CC26B','#7A4E2D','#DC9564',
+  '#0A4A2B','#5B7FA6','#C27C2C','#4A9324','#1E8C80',
+  '#9B6A4A','#2C6B14','#7FB7D9','#A88A3D','#5E3A6E',
+  '#16523E','#E0B97A','#3E6B8C','#6E8B3D','#B56A4C',
 ];
 
 function clasificarTramite(t) {
+  const texto = _textoClasificacion(t);
+  const esInv = IDS_INVESTIGACION.has(t.proceso_id);
+  const lista = esInv ? TEMAS_INV : TEMAS_FILM;
+  for (const { tema, kw } of lista) {
+    if (kw.some(k => texto.includes(k))) return tema;
+  }
+  return 'Otros';
+}
+
+// Texto normalizado del trámite usado para clasificar (título, objetivos, descripción…)
+function _textoClasificacion(t) {
   const d = t.datos_raw || {};
   // Rodear con espacios para que ' ave ' no matchee "avena" al inicio/fin
-  const texto = ' ' + _normInv([
+  return ' ' + _normInv([
     _tituloTramite(t),
     t.titulo_investigacion,                  // compliance / portadaHistorico
     t.texto_clasificacion,                   // campo pre-agregado de portadaHistorico
@@ -949,21 +1116,79 @@ function clasificarTramite(t) {
     d.tipo_investigacion,
     d.linea_investigacion,
   ].filter(Boolean).join(' ')) + ' ';
-  const esInv = IDS_INVESTIGACION.has(t.proceso_id);
-  const lista = esInv ? TEMAS_INV : TEMAS_FILM;
-  for (const { tema, kw } of lista) {
-    if (kw.some(k => texto.includes(k))) return tema;
+}
+
+// ─── Respaldo por similitud ───────────────────────────────────────────────────
+// Lo que ninguna palabra clave reconoce recibe la temática de los trámites ya
+// clasificados con vocabulario más parecido (palabras compartidas ponderadas por
+// rareza, IDF). Así ningún trámite queda "sin clasificar".
+const _STOP = new Set(('para como desde entre sobre sus los las del una unos unas este esta estos estas ' +
+  'segun durante mediante cual cuales donde cuando proyecto proyectos estudio estudios objetivo objetivos ' +
+  'general especifico especificos realizar realizacion actividad actividades permiso chile chilena chileno ' +
+  'region parque nacional reserva area areas protegida protegidas sector zona the and for with from into ' +
+  'their this that study project research analysis effects effect using based between under').split(' '));
+
+function _palabras(t) {
+  return new Set(_textoClasificacion(t).split(' ').filter(w => w.length >= 4 && !_STOP.has(w)));
+}
+
+function clasificarConjunto(tramites) {
+  const temas = new Map();          // id → temática
+  const porSimilitud = new Set();   // ids asignados por el respaldo
+  const base = [], pendientes = [];
+  for (const t of tramites) {
+    const tema = clasificarTramite(t);
+    if (tema === 'Otros') pendientes.push(t);
+    else { temas.set(t.id, tema); base.push({ tema, inv: IDS_INVESTIGACION.has(t.proceso_id), w: _palabras(t) }); }
   }
-  return 'Otros';
+  if (!pendientes.length) return { temas, porSimilitud };
+
+  const df = new Map();
+  base.forEach(b => b.w.forEach(w => df.set(w, (df.get(w) || 0) + 1)));
+  const idf = w => Math.log((base.length + 1) / ((df.get(w) || 0) + 1));
+  const masFrecuente = inv => {
+    const c = {};
+    base.filter(b => b.inv === inv).forEach(b => { c[b.tema] = (c[b.tema] || 0) + 1; });
+    return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Otros';
+  };
+
+  for (const t of pendientes) {
+    const inv = IDS_INVESTIGACION.has(t.proceso_id);
+    const w = _palabras(t);
+    const vecinos = base
+      .filter(b => b.inv === inv)
+      .map(b => {
+        let s = 0;
+        w.forEach(x => { if (b.w.has(x)) s += idf(x); });
+        return { tema: b.tema, s: s / Math.sqrt(b.w.size + 1) };
+      })
+      .filter(v => v.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 7);
+    let tema;
+    if (vecinos.length) {
+      const votos = {};
+      vecinos.forEach(v => { votos[v.tema] = (votos[v.tema] || 0) + v.s; });
+      tema = Object.entries(votos).sort((a, b) => b[1] - a[1])[0][0];
+    } else {
+      tema = masFrecuente(inv);   // sin texto útil: la temática más común de su tipo
+    }
+    temas.set(t.id, tema);
+    porSimilitud.add(t.id);
+  }
+  return { temas, porSimilitud };
 }
 
 // Jerarquía de consolidación: si un tema tiene pocos items, se fusiona con su padre
 const TEMA_PADRE = {
   'Herpetología':                  'Fauna Terrestre',
-  'Mamíferos Marinos':             'Fauna Terrestre',
   'Entomología / Invertebrados':   'Fauna Terrestre',
-  'Ictiología / Peces':            'Fauna Terrestre',
+  'Mamíferos Terrestres':          'Fauna Terrestre',
+  'Ictiología / Peces':            'Ciencias del Mar',
+  'Mamíferos Marinos':             'Ciencias del Mar',
   'Micología / Líquenes':          'Botánica / Flora',
+  'Microbiología':                 'Genética / Genómica',
+  'Salud / Zoonosis':              'Ecología',
   'Clima / Meteorología':          'Monitoreo Ambiental',
   'Turismo / Uso Público':         'Manejo y Conservación',
   'Recursos Hídricos / Limnología':'Ecología',
@@ -989,22 +1214,6 @@ function consolidarTemasPequenos(porTema, minItems) {
   return result;
 }
 
-function agruparPorTema(tramites, temas) {
-  const map = new Map();
-  for (const { tema } of temas) map.set(tema, []);
-  map.set('Otros', []);
-  for (const t of tramites) {
-    const tema = clasificarTramite(t);
-    if (!map.has(tema)) map.get('Otros').push(t);
-    else map.get(tema).push(t);
-  }
-  return new Map(
-    [...map.entries()]
-      .filter(([, v]) => v.length > 0)
-      .sort((a, b) => b[1].length - a[1].length)
-  );
-}
-
 function archivosDeFolder(data) {
   if (data.tipo === 'flat') return data.archivos || [];
   return Object.values(data.ids || {}).flat();
@@ -1022,14 +1231,6 @@ function getTramitePorCarpeta(folderName) {
 }
 
 // ─── PORTADA ─────────────────────────────────────────────────────────────────
-function clasificarDesdeArchivos(archivos) {
-  const texto = _normInv(archivos.map(a => a.nombre).join(' '));
-  for (const { tema, kw } of TEMAS_INV) {
-    if (kw.some(k => texto.includes(k))) return tema;
-  }
-  return 'Otros';
-}
-
 async function loadPortadaHistorico() {
   if (STATE.portadaHistorico.length > 0) return;
   try {
@@ -1057,12 +1258,6 @@ async function loadComplianceData() {
 }
 
 async function renderPortada() {
-  // Mostrar loading en gráficos mientras carga el histórico
-  const loadingChart = id => {
-    const c = $(id);
-    if (c) { const ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); }
-  };
-
   // Cargar histórico de gráficos y compliance en paralelo
   const [, ] = await Promise.all([
     loadPortadaHistorico(),
@@ -1071,55 +1266,16 @@ async function renderPortada() {
 
   // Gráficos usan TODOS los permisos históricos aprobados (no rechazados, no borrador)
   const hist  = STATE.portadaHistorico.filter(t => t.estado !== 'rechazado');
-  const invs  = hist.filter(t => IDS_INVESTIGACION.has(t.proceso_id));
-  const films = hist.filter(t => IDS_FILMACION.has(t.proceso_id));
-
-  renderChartTematico('chart-temas-inv',  agruparPorTema(invs,  TEMAS_INV),  'temasInv');
-  renderChartTematico('chart-temas-film', agruparPorTema(films, TEMAS_FILM), 'temasFilm');
+  if (!hist.length) {
+    // El servidor está regenerando el histórico: avisar y reintentar sin recargar la página
+    $('panorama').innerHTML = '<div class="empty-msg">⏳ El histórico se está actualizando; los gráficos aparecerán en unos segundos.</div>';
+    setTimeout(renderPortada, 20000);
+  } else {
+    renderPanorama(hist);   // static/js/panorama.js
+  }
 
   // Tabla: solo carpetas con archivos entregados (usa compliance para matching histórico)
   renderTablaEntregadas();
-}
-
-function renderChartTematico(canvasId, porTema, chartKey) {
-  const canvas = $(canvasId);
-  if (!canvas) return;
-  if (STATE.charts[chartKey]) STATE.charts[chartKey].destroy();
-
-  const labels = [...porTema.keys()];
-  const datos  = labels.map(k => porTema.get(k).length);
-  const total  = datos.reduce((a, b) => a + b, 0);
-
-  // Ajustar altura del canvas según número de barras
-  canvas.style.height = Math.max(200, labels.length * 32) + 'px';
-
-  STATE.charts[chartKey] = new Chart(canvas.getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        data: datos,
-        backgroundColor: labels.map((_, i) => PALETA_TEMAS[i % PALETA_TEMAS.length]),
-        borderWidth: 0,
-        borderRadius: 4,
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: {
-          label: c => ` ${c.raw} permisos (${Math.round(c.raw / (total||1) * 100)}%)`
-        }}
-      },
-      scales: {
-        x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: 'rgba(128,128,128,0.1)' } },
-        y: { ticks: { font: { size: 11 } } }
-      }
-    }
-  });
 }
 
 // ─── Formato de texto ────────────────────────────────────────────────────────
@@ -1248,19 +1404,29 @@ function renderTablaEntregadas(filtroTema) {
   if (!el) return;
   if (filtroTema === undefined) filtroTema = '';
 
-  // 1. Construir entradas con tema original
+  // 1. Construir entradas; sin trámite asociado se clasifica por los nombres de archivo
   const entradas = [];
   for (const [carpeta, data] of Object.entries(STATE.investigaciones)) {
     const archivos = archivosDeFolder(data);
     if (!archivos.length) continue;
     const tramite = getTramitePorCarpeta(carpeta);
-    const tema    = tramite ? clasificarTramite(tramite) : clasificarDesdeArchivos(archivos);
+    const item    = tramite || {
+      id: 'carpeta:' + carpeta, proceso_id: 1992,
+      titulo_investigacion: archivos.map(a => a.nombre.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')).join(' '),
+    };
     const titulo  = tramite ? (_tituloTramite(tramite) || '–') : '–';
     const regs    = tramite ? (tramite.regiones_list || []).join(', ') : '–';
     const estado  = tramite ? tramite.estado : null;
     const tid     = tramite ? tramite.id : null;
-    entradas.push({ carpeta, archivos, tramite, tema, titulo, regs, estado, tid });
+    entradas.push({ carpeta, archivos, tramite, item, titulo, regs, estado, tid });
   }
+  // Temática con respaldo por similitud, usando el histórico como base de comparación
+  const idsItems = new Set(entradas.map(e => e.item.id));
+  const { temas: temaDe } = clasificarConjunto([
+    ...STATE.portadaHistorico.filter(t => IDS_INVESTIGACION.has(t.proceso_id) && !idsItems.has(t.id)),
+    ...entradas.map(e => e.item),
+  ]);
+  entradas.forEach(e => { e.tema = temaDe.get(e.item.id) || 'Ecología'; });
 
   // 2. Agrupar TODAS las entradas y consolidar (para obtener los temas canónicos)
   let porTemaTotal = new Map();
@@ -1402,198 +1568,6 @@ function calcularDias(t) {
   return Math.round(ms / 86400000); // días
 }
 
-function promediosDias(lista) {
-  const completados = lista.filter(t => t.estado === 'completado').map(calcularDias).filter(d => d !== null);
-  const rechazados  = lista.filter(t => t.estado === 'rechazado' ).map(calcularDias).filter(d => d !== null);
-  const avg = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
-  return {
-    completados: { n: completados.length, avg: avg(completados) },
-    rechazados:  { n: rechazados.length,  avg: avg(rechazados)  },
-  };
-}
-
-function fmtDias(val) {
-  if (val === null) return '<span style="color:var(--muted)">–</span>';
-  if (val < 30)   return `<strong>${val} días</strong>`;
-  const meses = (val / 30.44).toFixed(1);
-  return `<strong>${val} días</strong> <span style="color:var(--muted)">(≈ ${meses} meses)</span>`;
-}
-
-function renderTiemposRespuesta() {
-  const ts   = STATE.tramites;
-  const inv  = ts.filter(t => IDS_INVESTIGACION.has(t.proceso_id));
-  const film = ts.filter(t => IDS_FILMACION.has(t.proceso_id));
-  const pInv  = promediosDias(inv);
-  const pFilm = promediosDias(film);
-
-  const row = (label, p) => `
-    <tr>
-      <td style="font-weight:600;padding:10px 14px">${label}</td>
-      <td style="padding:10px 14px;color:#155724">${fmtDias(p.completados.avg)}
-        <span style="font-size:11px;color:var(--muted)">(n=${p.completados.n})</span></td>
-      <td style="padding:10px 14px;color:#721c24">${fmtDias(p.rechazados.avg)}
-        <span style="font-size:11px;color:var(--muted)">(n=${p.rechazados.n})</span></td>
-    </tr>`;
-
-  $('tabla-tiempos-respuesta').innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead>
-        <tr style="background:var(--surface2);font-size:12px;text-transform:uppercase;letter-spacing:.5px">
-          <th style="padding:10px 14px;text-align:left;font-weight:600;color:#fff">Tipo de trámite</th>
-          <th style="padding:10px 14px;text-align:left;font-weight:600;color:#fff">✅ Completados</th>
-          <th style="padding:10px 14px;text-align:left;font-weight:600;color:#fff">❌ Rechazados</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${row('🔬 Investigación', pInv)}
-        ${row('🎥 Filmación', pFilm)}
-      </tbody>
-    </table>
-    <div style="font-size:11px;color:var(--muted);padding:8px 14px">
-      Tiempo medido desde fecha de inicio hasta fecha de término o última modificación del trámite, en el rango de años seleccionado.
-    </div>`;
-}
-
-function _makeDoughnut(canvasId, data, colors, key) {
-  const ctx = $(canvasId).getContext('2d');
-  if (STATE.charts[key]) STATE.charts[key].destroy();
-  STATE.charts[key] = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Pendientes', 'Completados', 'Rechazados'],
-      datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: 'var(--surface, #fff)' }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position: 'bottom', labels: { padding: 10, font: { size: 11 } } },
-        tooltip: { callbacks: {
-          label: c => ` ${c.label}: ${c.raw} (${Math.round(c.raw / (c.dataset.data.reduce((a,b)=>a+b,0)||1)*100)}%)`
-        }}
-      }
-    }
-  });
-}
-
-function renderChartEstados(invs, films, ts, f) {
-  const g = arr => ({
-    p: arr.filter(t => t.estado==='pendiente').length,
-    c: arr.filter(t => t.estado==='completado').length,
-    r: arr.filter(t => t.estado==='rechazado').length,
-  });
-
-  const container = $('chart-estados-container');
-  if (f === 'all') {
-    container.style.display = 'flex';
-    const si = g(invs), sf = g(films);
-    _makeDoughnut('chart-estados-inv',  [si.p, si.c, si.r], ['#F59E0B','#10B981','#EF4444'], 'estadosInv');
-    _makeDoughnut('chart-estados-film', [sf.p, sf.c, sf.r], ['#FBBF24','#059669','#DC2626'], 'estadosFilm');
-    if (STATE.charts.estados) { STATE.charts.estados.destroy(); STATE.charts.estados = null; }
-  } else {
-    // Ocultar uno de los dos según filtro, mostrar solo un donut centralizado
-    container.style.display = 'flex';
-    const src = f === 'inv' ? invs : films;
-    const { p, c, r } = g(src);
-    const colors = f === 'inv'
-      ? ['#F59E0B','#10B981','#EF4444']
-      : ['#FBBF24','#059669','#DC2626'];
-    // Destruir ambos y recrear solo el relevante en el canvas inv (más amplio)
-    if (STATE.charts.estadosInv)  { STATE.charts.estadosInv.destroy();  STATE.charts.estadosInv  = null; }
-    if (STATE.charts.estadosFilm) { STATE.charts.estadosFilm.destroy(); STATE.charts.estadosFilm = null; }
-    if (STATE.charts.estados)     { STATE.charts.estados.destroy();     STATE.charts.estados     = null; }
-    // Usar un canvas temporal para vista completa
-    const targetId = f === 'inv' ? 'chart-estados-inv' : 'chart-estados-film';
-    _makeDoughnut(targetId, [p, c, r], colors, 'estados');
-    // Ocultar el otro sub-canvas vaciándolo
-    const otherId = f === 'inv' ? 'chart-estados-film' : 'chart-estados-inv';
-    const otherCtx = $(otherId).getContext('2d');
-    otherCtx.clearRect(0, 0, $(otherId).width, $(otherId).height);
-    // Ocultar la etiqueta del otro
-    const labels = container.querySelectorAll('div[style*="font-size:11px"]');
-    labels.forEach((lbl, i) => {
-      if (f === 'inv') lbl.style.opacity = i === 0 ? '1' : '0.2';
-      else             lbl.style.opacity = i === 1 ? '1' : '0.2';
-    });
-  }
-  // Restablecer opacidad cuando es 'all'
-  if (f === 'all') {
-    const labels = container.querySelectorAll('div[style*="font-size:11px"]');
-    labels.forEach(lbl => lbl.style.opacity = '1');
-  }
-}
-
-function _countByRegion(tramites) {
-  const byRegion = {};
-  REGIONES_CHILE.forEach(r => { byRegion[r.nombre] = { pendiente:0, completado:0, rechazado:0 }; });
-  tramites.forEach(t => {
-    const matched = new Set();
-    (t.regiones_list || []).forEach(raw => {
-      const hit = REGIONES_CHILE.find(r =>
-        r.nombre.toLowerCase() === raw.toLowerCase() ||
-        raw.toLowerCase().includes(r.nombre.toLowerCase().split(' ')[0].toLowerCase())
-      );
-      if (hit) matched.add(hit.nombre);
-    });
-    matched.forEach(nombre => {
-      if (!byRegion[nombre]) return;
-      const est = t.estado === 'rechazado' ? 'rechazado' : t.estado === 'completado' ? 'completado' : 'pendiente';
-      byRegion[nombre][est]++;
-    });
-  });
-  return byRegion;
-}
-
-function renderChartProcesos(invs, films, ts, f) {
-  const ctx = $('chart-procesos').getContext('2d');
-  if (STATE.charts.procesos) STATE.charts.procesos.destroy();
-
-  let datasets, labels;
-
-  if (f === 'all') {
-    // Modo combinado: dos grupos por región (🔬 inv, 🎬 film) usando colores distintos
-    const bi = _countByRegion(invs);
-    const bf = _countByRegion(films);
-    labels = REGIONES_CHILE.map(r => r.nombre).filter(n =>
-      (bi[n] && (bi[n].pendiente+bi[n].completado+bi[n].rechazado)>0) ||
-      (bf[n] && (bf[n].pendiente+bf[n].completado+bf[n].rechazado)>0)
-    );
-    datasets = [
-      { label:'🔬 Pend.',  data: labels.map(n=>bi[n].pendiente),  backgroundColor:'#F59E0B', stack:'inv',  borderRadius:2 },
-      { label:'🔬 Comp.',  data: labels.map(n=>bi[n].completado), backgroundColor:'#10B981', stack:'inv',  borderRadius:2 },
-      { label:'🔬 Rech.',  data: labels.map(n=>bi[n].rechazado),  backgroundColor:'#EF4444', stack:'inv',  borderRadius:2 },
-      { label:'🎬 Pend.',  data: labels.map(n=>bf[n].pendiente),  backgroundColor:'#FDE68A', stack:'film', borderRadius:2 },
-      { label:'🎬 Comp.',  data: labels.map(n=>bf[n].completado), backgroundColor:'#6EE7B7', stack:'film', borderRadius:2 },
-      { label:'🎬 Rech.',  data: labels.map(n=>bf[n].rechazado),  backgroundColor:'#FCA5A5', stack:'film', borderRadius:2 },
-    ];
-  } else {
-    const b = _countByRegion(ts);
-    labels = REGIONES_CHILE.map(r => r.nombre).filter(n =>
-      b[n] && (b[n].pendiente+b[n].completado+b[n].rechazado)>0
-    );
-    const colors = f === 'inv'
-      ? ['#F59E0B','#10B981','#EF4444']
-      : ['#FBBF24','#059669','#DC2626'];
-    datasets = [
-      { label:'Pendiente',  data: labels.map(n=>b[n].pendiente),  backgroundColor:colors[0], stack:'s', borderRadius:2 },
-      { label:'Completado', data: labels.map(n=>b[n].completado), backgroundColor:colors[1], stack:'s', borderRadius:2 },
-      { label:'Rechazado',  data: labels.map(n=>b[n].rechazado),  backgroundColor:colors[2], stack:'s', borderRadius:2 },
-    ];
-  }
-
-  STATE.charts.procesos = new Chart(ctx, {
-    type: 'bar',
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: 'bottom', labels: { font:{ size:10 }, boxWidth:10, padding:8 } } },
-      scales: {
-        x: { stacked: true, ticks: { font:{ size:9 }, maxRotation:45 } },
-        y: { stacked: true, beginAtZero:true, ticks:{ precision:0 } }
-      }
-    }
-  });
-}
-
 function _avancePorRegion(tramites) {
   const byRegion = {};
   REGIONES_CHILE.forEach(r => { byRegion[r.nombre] = { sum:0, count:0 }; });
@@ -1615,53 +1589,12 @@ function _avancePorRegion(tramites) {
   return byRegion;
 }
 
-function renderChartAvance(invs, films, ts, f) {
-  const ctx = $('chart-avance').getContext('2d');
-  if (STATE.charts.avance) STATE.charts.avance.destroy();
-
-  let datasets, labels;
-
-  if (f === 'all') {
-    const bi = _avancePorRegion(invs);
-    const bf = _avancePorRegion(films);
-    labels = REGIONES_CHILE.map(r => r.nombre).filter(n =>
-      (bi[n]&&bi[n].count>0) || (bf[n]&&bf[n].count>0)
-    );
-    const vi = labels.map(n => bi[n].count ? Math.round(bi[n].sum/bi[n].count) : null);
-    const vf = labels.map(n => bf[n].count ? Math.round(bf[n].sum/bf[n].count) : null);
-    datasets = [
-      { label:'🔬 Investigación', data:vi, backgroundColor:'#3B82F6', borderRadius:3 },
-      { label:'🎬 Filmación',     data:vf, backgroundColor:'#F97316', borderRadius:3 },
-    ];
-  } else {
-    const b = _avancePorRegion(ts);
-    labels = REGIONES_CHILE.map(r => r.nombre).filter(n => b[n]&&b[n].count>0);
-    const v = labels.map(n => Math.round(b[n].sum/b[n].count));
-    const color = f === 'inv' ? '#3B82F6' : '#F97316';
-    datasets = [{ label:'% Avance Promedio', data:v, backgroundColor:v.map(()=>color), borderRadius:4 }];
-  }
-
-  STATE.charts.avance = new Chart(ctx, {
-    type: 'bar',
-    data: { labels, datasets },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      plugins: { legend: { display: f==='all', position:'bottom', labels:{ font:{size:11}, boxWidth:12 } } },
-      scales: {
-        x: { beginAtZero:true, max:100, ticks:{ callback: v => v+'%' } },
-        y: { ticks:{ font:{ size:10 } } }
-      }
-    }
-  });
-}
-
 function renderTablaVencimientos() {
   const hoy = new Date();
   const seen = new Set();   // evitar duplicados si ya está por etapa Y por fecha_limite
   const items = [];
 
-  STATE.tramites.forEach(t => {
+  tramitesDelTipo().forEach(t => {
     if (t.estado === 'rechazado' || t.estado === 'completado') return;
 
     // 1) Vencimiento por etapa individual
@@ -1743,7 +1676,7 @@ function renderTablaRecientes() {
 
   const ORDEN_GRUPO = { pendiente: 0, completado: 1, rechazado: 2 };
 
-  const recientes = [...STATE.tramites]
+  const recientes = tramitesDelTipo()
     .filter(t => t.fecha_inicio && new Date(t.fecha_inicio) >= hace3meses)
     .sort((a, b) => {
       // 1° criterio: grupo (pendiente → completado → rechazado)
@@ -1800,18 +1733,24 @@ function renderDuplicadosSection() {
     return;
   }
 
-  // Reconstruir grupos únicos para mostrar en tabla
+  // Reconstruir grupos únicos para mostrar en tabla, solo con trámites del tipo activo
+  // (la detección cruza tipos: una misma persona puede tener investigación y filmación
+  // del mismo proyecto; en cada sección solo cuentan los de esa sección)
+  const delTipo = new Set(tramitesDelTipo().map(t => t.id));
   const gruposVistos = new Map();
-  for (const t of STATE.tramites) {
-    if (!STATE.duplicados.has(t.id)) continue;
+  for (const t of tramitesDelTipo().filter(t => STATE.duplicados.has(t.id))) {
     const titulo = _normInv(_tituloTramite(t));
     const email  = _normInv(t.email_solicitante || '');
     const key    = titulo.length >= 5
       ? `${email}§${titulo}`
       : `${email}§${t.proceso_id}`;
-    if (!gruposVistos.has(key)) {
-      gruposVistos.set(key, [t, ...STATE.duplicados.get(t.id)]);
-    }
+    const grupo = [t, ...STATE.duplicados.get(t.id).filter(o => delTipo.has(o.id))];
+    if (!gruposVistos.has(key) && grupo.length >= 2) gruposVistos.set(key, grupo);
+  }
+  const afectados = new Set([...gruposVistos.values()].flat().map(t => t.id));
+  if (!gruposVistos.size) {
+    seccion.style.display = 'none';
+    return;
   }
 
   const filas = [...gruposVistos.values()].map(grupo => {
@@ -1833,7 +1772,7 @@ function renderDuplicadosSection() {
   $('alerta-duplicados').innerHTML = `
     <div style="padding:10px 16px;font-size:13px;color:#7D4E00;background:#FFFDE7;border-bottom:1px solid #FFD700;font-weight:600">
       Se detectaron ${gruposVistos.size} grupo${gruposVistos.size !== 1 ? 's' : ''} de posibles permisos duplicados por región
-      (${STATE.duplicados.size} trámite${STATE.duplicados.size !== 1 ? 's' : ''} afectado${STATE.duplicados.size !== 1 ? 's' : ''}).
+      (${afectados.size} trámite${afectados.size !== 1 ? 's' : ''} afectado${afectados.size !== 1 ? 's' : ''}).
       El mismo solicitante tiene múltiples solicitudes del mismo proyecto en distintas regiones.
     </div>
     <table>
@@ -1845,124 +1784,6 @@ function renderDuplicadosSection() {
       <tbody>${filas}</tbody>
     </table>`;
   seccion.style.display = '';
-}
-
-// ─── TRÁMITES TABLE ───────────────────────────────────────────────────────────
-function renderTramitesTable(tramites) {
-  $('tramites-count').textContent = `${tramites.length} trámite${tramites.length !== 1 ? 's' : ''}`;
-
-  if (!tramites.length) {
-    $('tabla-tramites').innerHTML = '<div class="empty-msg">No se encontraron trámites con los filtros aplicados</div>';
-    return;
-  }
-
-  // Por vencer (hoy/futuro) primero; ya vencidos al final; no-pendiente al fondo
-  const _hoy = new Date(); _hoy.setHours(0, 0, 0, 0);
-  const sorted = [...tramites].sort((a, b) => {
-    const pendA = a.estado === 'pendiente';
-    const pendB = b.estado === 'pendiente';
-    if (pendA !== pendB) return pendA ? -1 : 1;
-    if (!pendA) return 0;
-    const fvA = fechaVencimientoEfectiva(a);
-    const fvB = fechaVencimientoEfectiva(b);
-    if (!fvA && !fvB) return 0;
-    if (!fvA) return 1;
-    if (!fvB) return -1;
-    const dA = Math.ceil((new Date(fvA) - _hoy) / 86400000);
-    const dB = Math.ceil((new Date(fvB) - _hoy) / 86400000);
-    const upA = dA >= 0, upB = dB >= 0;
-    if (upA !== upB) return upA ? -1 : 1;  // por vencer primero
-    if (upA) return dA - dB;                // por vencer: más próximo arriba
-    return Math.abs(dA) - Math.abs(dB);     // vencidos: más reciente arriba
-  });
-
-  const rows = sorted.map(t => {
-    const etapaActual  = t.etapa_actual;
-    const vencida      = tramiteEsVencido(t);
-    const rechazado    = t.estado === 'rechazado';
-    const esDuplicado  = STATE.duplicados.has(t.id);
-    const rowClass     = rechazado         ? 'row-rechazado'
-                       : vencida           ? 'row-vencido'
-                       : esDuplicado       ? 'row-duplicado row-pendiente'
-                       : t.estado === 'pendiente' ? 'row-pendiente'
-                       : '';
-    const fvEfectiva  = fechaVencimientoEfectiva(t);
-    const fvLabel     = fvEfectiva
-      ? (vencida
-          ? `<span style="color:#C0392B;font-weight:700">⚠️ ${formatDate(fvEfectiva)}</span>`
-          : formatDate(fvEfectiva))
-      : '–';
-    const inv = getArchivosTramite(t.id, t.nombre_solicitante || '');
-    const invCell = inv && inv.archivos.length > 0
-      ? `<a href="${inv.url}" target="_blank" class="inv-link">📁 ${inv.archivos.length} archivo${inv.archivos.length !== 1 ? 's' : ''}</a>`
-      : `<span style="color:var(--muted)">–</span>`;
-    let estadoBadge = badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente });
-    if (inv && inv.archivos.length > 0 && t.estado === 'pendiente') {
-      estadoBadge = `<span class="badge-inv-completado" title="Completado – archivos entregados">✅ Completado*</span>`;
-    }
-    if (esDuplicado) {
-      estadoBadge += `<span class="badge badge-duplicado-regional" title="Posible solicitud dividida por región — mismo proyecto en múltiples permisos">⚠️ Duplicado reg.</span>`;
-    }
-    return `
-      <tr class="${rowClass}">
-        <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
-        <td>${estadoBadge}</td>
-        <td>${tipoBadgeHtml(t)}</td>
-        <td>${t.nombre_solicitante || '–'}</td>
-        <td>${invCell}</td>
-        <td><a href="mailto:${t.email_solicitante}" style="color:inherit">${t.email_solicitante || '–'}</a></td>
-        <td>${regionMiniMapHtml(t)}</td>
-        <td>${progressHtml(t.porcentaje_avance)}</td>
-        <td>${etapaActual ? (etapaActual.nombres || '–') : '–'}</td>
-        <td>${etapaActual ? `<a href="mailto:${etapaActual.email}" style="color:inherit">${etapaActual.email || '–'}</a>` : '–'}</td>
-        <td>${fvLabel}</td>
-        <td>${formatDate(t.fecha_inicio)}</td>
-        <td>${formatDate(t.fecha_termino)}</td>
-      </tr>`;
-  }).join('');
-
-  $('tabla-tramites').innerHTML = `
-    <table>
-      <thead><tr>
-        <th>ID</th><th>Estado</th><th>Tipo</th>
-        <th>Solicitante</th><th>📁 Archivos</th><th>Email Solicitante</th><th>Regiones</th>
-        <th style="min-width:130px">Avance</th>
-        <th>Responsable Actual</th><th>Email Responsable</th>
-        <th>Vencimiento Etapa</th><th>Fecha Inicio</th><th>Fecha Término</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
-
-// ─── FILTROS ──────────────────────────────────────────────────────────────────
-function aplicarFiltros() {
-  const estado   = $('filter-estado').value;
-  const proceso  = $('filter-proceso').value;
-  const region   = $('filter-region').value;
-  const fechaIni = $('filter-fecha-inicio').value;
-  const fechaFin = $('filter-fecha-fin').value;
-
-  let lista = [...STATE.tramites];
-
-  if (estado)  lista = lista.filter(t => t.estado === estado);
-  if (proceso) lista = lista.filter(t => grupoDeProcesoId(t.proceso_id) === proceso);
-  // Filtro de región: busca en regiones_list (un tramite puede cubrir varias regiones)
-  if (region)  lista = lista.filter(t => (t.regiones_list || []).includes(region));
-  if (fechaIni) lista = lista.filter(t => t.fecha_inicio && t.fecha_inicio >= fechaIni);
-  if (fechaFin) lista = lista.filter(t => t.fecha_inicio && t.fecha_inicio.slice(0,10) <= fechaFin);
-
-  STATE.tramitesFiltrados = lista;
-  renderTramitesTable(lista);
-}
-
-function limpiarFiltros() {
-  $('filter-estado').value = '';
-  $('filter-proceso').value = '';
-  $('filter-region').value = '';
-  $('filter-fecha-inicio').value = '';
-  $('filter-fecha-fin').value = '';
-  STATE.tramitesFiltrados = [...STATE.tramites];
-  renderTramitesTable(STATE.tramites);
 }
 
 // ─── BÚSQUEDA ─────────────────────────────────────────────────────────────────
@@ -2753,6 +2574,9 @@ function renderModalBody(t) {
         <div class="modal-kv-item"><span class="label">Fecha Modificación</span><span class="value">${formatDateTime(t.fecha_modificacion)}</span></div>
         <div class="modal-kv-item"><span class="label">Fecha Término</span><span class="value">${formatDateTime(t.fecha_termino)}</span></div>
         <div class="modal-kv-item"><span class="label">Región</span><span class="value">${t.region || '–'}</span></div>
+        ${t.estado === 'rechazado' && t.motivo_rechazo ? `
+        <div class="modal-kv-item modal-kv-item--full"><span class="label">Motivo del rechazo (CONAF)</span>
+          <span class="value motivo-rechazo">${_esc(t.motivo_rechazo)}</span></div>` : ''}
       </div>
     </div>
 
@@ -3096,7 +2920,7 @@ Por medio de la presente, el Departamento de Gestión de Áreas Protegidas de CO
 
 realizada en el Sistema Nacional de Áreas Protegidas (SNAP) — ${regionStr}.
 
-De acuerdo con el Numeral 6 del Reglamento de Investigación en Áreas Silvestres Protegidas del Estado:
+De acuerdo con el Numeral 6 del Reglamento de Investigación en Áreas Protegidas del Estado:
 
 "La no entrega, en un plazo máximo de tres años de finalizada la investigación de terreno, de los informes, separatas y material de holotipos estipulados en este instructivo inhabilitará a los/las investigadores/as involucrados/as para participar en nuevas investigaciones en el SNAP."
 
@@ -3138,7 +2962,7 @@ function buildEmailHtml(nombre, titulo, anios, region) {
 <p>Por medio de la presente, el Departamento de Gestión de Áreas Protegidas de CONAF le informa que han transcurrido más de <strong>${aniosFmt} años</strong> desde la fecha de término de actividades de terreno de su investigación:</p>
 <blockquote style="border-left:4px solid #1B4F1E;padding:12px 16px;background:#f5faf5;font-style:italic;margin:16px 0">"${titulo}"</blockquote>
 <p>realizada en el Sistema Nacional de Áreas Protegidas (SNAP) — <strong>${regionStr}</strong>.</p>
-<p>De acuerdo con el <strong>Numeral 6 del Reglamento de Investigación en Áreas Silvestres Protegidas del Estado</strong>:</p>
+<p>De acuerdo con el <strong>Numeral 6 del Reglamento de Investigación en Áreas Protegidas del Estado</strong>:</p>
 <blockquote style="border-left:4px solid #856404;padding:12px 16px;background:#fffbeb;margin:16px 0;font-style:italic">"La no entrega, en un plazo máximo de tres años de finalizada la investigación de terreno, de los informes, separatas y material de holotipos estipulados en este instructivo <strong>inhabilitará</strong> a los/las investigadores/as involucrados/as para participar en nuevas investigaciones en el SNAP."</blockquote>
 <p>En consecuencia, le solicitamos que a la brevedad posible remita los siguientes documentos:</p>
 <ol style="line-height:1.9">
@@ -3242,6 +3066,7 @@ document.addEventListener('DOMContentLoaded', () => {
       qsa('.tab-content').forEach(s => s.classList.remove('active'));
       btn.classList.add('active');
       $(`tab-${btn.dataset.tab}`).classList.add('active');
+      if (btn.dataset.tipo) setTipo(btn.dataset.tipo);
     });
   });
 
@@ -3253,6 +3078,12 @@ document.addEventListener('DOMContentLoaded', () => {
       STATE.dashFilter = btn.dataset.filter;
       renderDashboard();
     });
+  });
+
+  // Filtro por región del Resumen
+  $('filtro-regiones').addEventListener('click', e => {
+    const b = e.target.closest('[data-region]');
+    if (b) setRegion(b.dataset.region || null);
   });
 
   // Rango de años — validar que desde ≤ hasta
@@ -3270,36 +3101,26 @@ document.addEventListener('DOMContentLoaded', () => {
     $('btn-refresh').classList.add('spinning');
     try {
       const { desde, hasta } = rangoActual();
+      // Mismo rango ya cargado → forzar datos frescos; rango nuevo → puede venir de la caché
+      const fresco = `${desde}-${hasta}` === STATE.rangoCargado;
       showLoading(`Actualizando datos (${desde}–${hasta})…`);
       try {
-        STATE.tramites = filtrarRango(await loadTramites(paramsRango()));
+        STATE.tramites = filtrarRango(await loadTramites({ ...paramsRango(), fresco: fresco ? 'true' : '' }));
+        STATE.rangoCargado = `${desde}-${hasta}`;
       } catch {
         showLoading('Descargando todos los trámites…');
         STATE.tramites = filtrarRango(await loadTramites());
       }
-      STATE.tramitesFiltrados = [...STATE.tramites];
       STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
       updateLastUpdate();
       renderDashboard();
       renderPortada();
-      renderTramitesTable(STATE.tramitesFiltrados);
-      populateRegionSelect();
     } catch (err) {
       alert('Error actualizando: ' + err.message);
     } finally {
       hideLoading();
       $('btn-refresh').classList.remove('spinning');
     }
-  });
-
-  // Filters
-  $('btn-aplicar-filtros').addEventListener('click', aplicarFiltros);
-  $('btn-limpiar-filtros').addEventListener('click', limpiarFiltros);
-
-  // Export from list
-  $('btn-export-lista').addEventListener('click', () => {
-    const url = buildExportUrl('filter');
-    window.location.href = url;
   });
 
   $('btn-buscar').addEventListener('click', ejecutarBusqueda);
@@ -3320,20 +3141,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Cumplimiento – descarga directa
   $('btn-descargar-compliance').addEventListener('click', () => {
     window.location.href = '/api/export/compliance/excel';
-  });
-
-  // Export from list tab – build from current filters
-  $('btn-export-lista').addEventListener('click', () => {
-    const estado  = $('filter-estado').value;
-    const proceso = $('filter-proceso').value;
-    const fIni    = $('filter-fecha-inicio').value;
-    const fFin    = $('filter-fecha-fin').value;
-    const params  = new URLSearchParams();
-    if (estado)  params.set('estado', estado);
-    if (proceso) params.set('proceso_id', proceso);
-    if (fIni)    params.set('created_at_start', dateToTimestamp(fIni));
-    if (fFin)    params.set('created_at_end', dateToTimestamp(fFin + 'T23:59:59'));
-    window.location.href = `/api/export/excel?${params}`;
   });
 
   // Correos modal

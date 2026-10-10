@@ -4,14 +4,15 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env.prod
-    ports:
-      - "127.0.0.1:18000:8000"
+    # red del host: la app usa el Postgres local de la VM (localhost:5432)
+    network_mode: host
     volumes:
       - ./Investigaciones:/app/Investigaciones
       - ./gmail_auth:/app/gmail_auth
+      - ./fotos_portada:/app/fotos_portada
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 120s   # al arrancar precarga 3 años de trámites y el índice de Drive

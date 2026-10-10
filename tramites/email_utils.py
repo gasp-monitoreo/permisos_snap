@@ -62,7 +62,7 @@ def email_html_body(nombre, titulo, anios, region):
 <p>Por medio de la presente, el Departamento de Gestión de Áreas Protegidas de CONAF le informa que han transcurrido más de <strong>{anios_fmt} años</strong> desde la fecha de término de actividades de terreno de su investigación:</p>
 <blockquote style="border-left:4px solid #1B4F1E;padding:12px 16px;background:#f5faf5;font-style:italic;margin:16px 0">"{titulo}"</blockquote>
 <p>realizada en el Sistema Nacional de Áreas Protegidas (SNAP) — <strong>{region_str}</strong>.</p>
-<p>De acuerdo con el <strong>Numeral 6 del Reglamento de Investigación en Áreas Silvestres Protegidas del Estado</strong>:</p>
+<p>De acuerdo con el <strong>Numeral 6 del Reglamento de Investigación en Áreas Protegidas del Estado</strong>:</p>
 <blockquote style="border-left:4px solid #856404;padding:12px 16px;background:#fffbeb;margin:16px 0;font-style:italic">"La no entrega, en un plazo máximo de tres años de finalizada la investigación de terreno, de los informes, separatas y material de holotipos estipulados en este instructivo <strong>inhabilitará</strong> a los/las investigadores/as involucrados/as para participar en nuevas investigaciones en el SNAP."</blockquote>
 <p>En consecuencia, le solicitamos que a la brevedad posible remita los siguientes documentos:</p>
 <ol style="line-height:1.9">

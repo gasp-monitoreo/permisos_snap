@@ -1,0 +1,12 @@
+# Overrides solo para desarrollo local (docker compose up lo carga automáticamente)
+services:
+  app:
+    environment:
+      INITIAL_ADMIN_EMAIL:    ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+
+  caddy:
+    ports: !override
+      - "80:80"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro

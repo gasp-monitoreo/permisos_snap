@@ -117,16 +117,16 @@ def build_index(service, folder_id):
     return result
 
 
-def get_cached_index():
-    """Retorna el índice Drive cacheado (30 min TTL)."""
-    with _lock:
-        if _cache['data'] is not None and (time.time() - _cache['ts']) < _CACHE_TTL:
-            return _cache['data'], None
+_DJ_KEY = 'drive:index'
+_refrescando = threading.Event()
 
+
+def _descargar_index():
+    """Construye el índice desde Drive y lo guarda en la caché de Django (Postgres)."""
+    from django.core.cache import cache
     svc, err = get_drive_service()
     if err:
-        return None, err
-
+        return None, 'needs_auth' if 'invalid_grant' in str(err) else err
     try:
         data = build_index(svc, DRIVE_FOLDER_ID)
     except Exception as e:
@@ -134,12 +134,50 @@ def get_cached_index():
         if '403' in err_str or 'insufficient' in err_str.lower() or 'forbidden' in err_str.lower():
             return None, 'needs_auth'
         return None, err_str
-
+    entrada = {'ts': time.time(), 'data': data}
+    cache.set(_DJ_KEY, entrada, 30 * 24 * 3600)
     with _lock:
-        _cache.update({'ts': time.time(), 'data': data})
+        _cache.update(entrada)
     return data, None
 
 
+def _refrescar_en_segundo_plano():
+    if _refrescando.is_set():
+        return
+    _refrescando.set()
+
+    def run():
+        try:
+            _descargar_index()
+        finally:
+            _refrescando.clear()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def get_cached_index():
+    """Índice Drive con stale-while-revalidate: memoria → Postgres → Drive.
+
+    Si tiene más de 30 min se sirve igual y se reconstruye en segundo plano;
+    solo se espera a Drive cuando no hay ninguna copia guardada.
+    """
+    from django.core.cache import cache
+    with _lock:
+        entrada = dict(_cache) if _cache['data'] is not None else None
+    if entrada is None:
+        entrada = cache.get(_DJ_KEY)
+        if entrada:
+            with _lock:
+                _cache.update(entrada)
+    if entrada is None:
+        return _descargar_index()
+    if time.time() - entrada['ts'] > _CACHE_TTL:
+        _refrescar_en_segundo_plano()
+    return entrada['data'], None
+
+
 def invalidate_cache():
+    from django.core.cache import cache
+    cache.delete(_DJ_KEY)
     with _lock:
         _cache.update({'ts': 0, 'data': None})

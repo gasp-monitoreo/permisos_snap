@@ -13,6 +13,11 @@ staticfiles/
 Investigaciones/
 gmail_auth/
 cache/
+fotos_portada/
+
+# Límites SNAP: solo entra el GeoJSON procesado, no el shapefile original (~300 MB)
+data/*.zip
+data/snap_shp/
 
 # Dev/CI
 .env

@@ -12,12 +12,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/Investigaciones /app/gmail_auth /app/staticfiles
+RUN mkdir -p /app/Investigaciones /app/gmail_auth /app/fotos_portada /app/staticfiles
 
 EXPOSE 8000
 
 CMD ["sh", "-c", "\
     python manage.py migrate --noinput && \
+    python manage.py createcachetable && \
     python manage.py ensure_admin && \
     python manage.py collectstatic --noinput --clear && \
     exec gunicorn config.wsgi:application \

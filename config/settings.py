@@ -93,6 +93,15 @@ STORAGES = {
 
 INVESTIGACIONES_DIR = str(BASE_DIR / 'Investigaciones')
 GMAIL_AUTH_DIR      = str(BASE_DIR / 'gmail_auth')
+FOTOS_DIR           = str(BASE_DIR / 'fotos_portada')
+
+# Caché en Postgres: compartida entre workers de gunicorn y persistente entre reinicios
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache',
+    }
+}
 
 CEROFILAS_API_BASE = os.environ.get('CEROFILAS_API_BASE', 'https://conaf.cerofilas.gob.cl/backend/api')
 CEROFILAS_TOKEN    = os.environ.get('CEROFILAS_TOKEN',    '')

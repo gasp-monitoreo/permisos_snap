@@ -90,8 +90,19 @@ def get_tramites(
     updated_at_end: Optional[str]   = None,
     ended_at_start: Optional[str]   = None,
     ended_at_end: Optional[str]     = None,
+    fresco: bool = False,
 ):
     try:
+        # Rango de años del panel → caché (ver tramites_cache.py); fresco=true fuerza descarga
+        solo_rango = created_at_start and created_at_end and not any(
+            [proceso_id, updated_at_start, updated_at_end, ended_at_start, ended_at_end])
+        if solo_rango:
+            from . import tramites_cache
+            desde, hasta = tramites_cache.rango_anios(created_at_start, created_at_end)
+            entrada = tramites_cache.obtener(desde, hasta, forzar=fresco)
+            return {'ok': True, 'data': entrada['data'], 'total': len(entrada['data']),
+                    'actualizado_en': datetime.fromtimestamp(entrada['ts']).isoformat()}
+
         date_cutoff = None
         if created_at_start:
             try:
@@ -434,6 +445,87 @@ def investigaciones_drive_refresh(request):
     if err:
         return {'ok': False, 'error': err}
     return {'ok': True, 'data': data}
+
+
+# ── Presión sobre áreas protegidas ────────────────────────────────────────────
+
+@api.get('/presion')
+def presion_areas(request, region: str, tipo: Optional[str] = None):
+    """Permisos activos (en ejecución, programados, en evaluación) por área protegida de una región.
+    tipo: 'inv' (investigación) o 'film' (filmación y fotografía); sin tipo, ambos."""
+    from .presion import presion_region
+    if tipo not in (None, 'inv', 'film'):
+        return api.create_response(request, {'ok': False, 'error': 'tipo debe ser inv o film'}, status=400)
+    try:
+        return {'ok': True, 'region': region, 'tipo': tipo, 'data': presion_region(region, tipo)}
+    except Exception as e:
+        return api.create_response(request, {'ok': False, 'error': str(e)}, status=500)
+
+
+# ── Fotos de portada ──────────────────────────────────────────────────────────
+
+_fotos_job = {'corriendo': False, 'ultimo': None}
+
+
+def _es_superusuario(request):
+    return bool(getattr(request, 'user', None) and request.user.is_authenticated and request.user.is_superuser)
+
+
+_SOLO_SUPERUSUARIO = {'ok': False, 'error': 'Solo un superusuario puede gestionar las fotos.'}
+
+
+@api.get('/fotos')
+def fotos_lista(request, todas: bool = False):
+    from .fotos import load_manifest
+    fotos = load_manifest()['fotos']
+    if not (todas and _es_superusuario(request)):   # las ocultas solo las ve el superusuario
+        fotos = [f for f in fotos if f.get('activa', True)]
+    return {'ok': True, 'data': [{**f, 'url': f'/fotos/{f["archivo"]}'} for f in fotos],
+            'job': _fotos_job}
+
+
+@api.post('/fotos/{archivo}/activa')
+def fotos_toggle(request, archivo: str, activa: bool):
+    if not _es_superusuario(request):
+        return api.create_response(request, _SOLO_SUPERUSUARIO, status=403)
+    from .fotos import _lock, load_manifest, save_manifest
+    with _lock:
+        m = load_manifest()
+        for f in m['fotos']:
+            if f['archivo'] == archivo:
+                f['activa'] = activa
+        save_manifest(m)
+    return {'ok': True}
+
+
+@api.post('/fotos/extraer')
+def fotos_extraer(request):
+    """Lanza en background la extracción de fotos desde los documentos Drive."""
+    if not _es_superusuario(request):
+        return api.create_response(request, _SOLO_SUPERUSUARIO, status=403)
+    import threading
+    from .drive_utils import get_cached_index, get_drive_service
+    from . import fotos
+
+    if _fotos_job['corriendo']:
+        return {'ok': True, 'job': _fotos_job}
+    svc, err = get_drive_service()
+    if err:
+        return {'ok': False, 'error': err}
+
+    def run():
+        _fotos_job.update({'corriendo': True, 'ultimo': None})
+        try:
+            index, e = get_cached_index()
+            n = fotos.extraer(svc, index or {}, log=lambda *_: None) if not e else 0
+            _fotos_job['ultimo'] = e or f'{n} fotos nuevas'
+        except Exception as exc:
+            _fotos_job['ultimo'] = f'error: {exc}'
+        finally:
+            _fotos_job['corriendo'] = False
+
+    threading.Thread(target=run, daemon=True).start()
+    return {'ok': True, 'job': {'corriendo': True}}
 
 
 @api.get('/investigaciones/index')

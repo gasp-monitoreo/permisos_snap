@@ -13,6 +13,13 @@ gmail_auth/
 # ── Carpeta de investigadores (archivos de campo, no van en git) ───────────────
 Investigaciones/
 
+# ── Límites SNAP: shapefile original (se procesa con importar_limites_snap) ─────
+data/*.zip
+data/snap_shp/
+
+# ── Fotos extraídas de documentos Drive (se generan con extraer_fotos_drive) ───
+fotos_portada/
+
 # ── Python ─────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc

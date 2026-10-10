@@ -78,6 +78,32 @@ def serve_investigacion(request, filepath=''):
     raise Http404(filepath)
 
 
+# ── Fotos de portada ──────────────────────────────────────────────────────────
+
+def serve_foto(request, archivo):
+    """Sirve una foto del manifest. Las activas son públicas (se usan en el login);
+    las ocultas solo las ve el superusuario, para gestionarlas."""
+    from .fotos import load_manifest
+    foto = next((f for f in load_manifest()['fotos'] if f['archivo'] == archivo), None)
+    activa = bool(foto and foto.get('activa', True))
+    if not foto or (not activa and not request.user.is_superuser):
+        raise Http404(archivo)
+    resp = FileResponse(open(os.path.join(settings.FOTOS_DIR, archivo), 'rb'),
+                        content_type='image/jpeg')
+    resp['Cache-Control'] = 'public, max-age=604800, immutable' if activa else 'private, no-store'
+    return resp
+
+
+def login_fotos(request):
+    """Lista mínima de fotos para el carrusel del login (sin datos internos)."""
+    from django.http import JsonResponse
+    from .fotos import fotos_activas
+    return JsonResponse({'fotos': [
+        {'url': f'/fotos/{f["archivo"]}', 'credito': f['investigador']}
+        for f in fotos_activas()
+    ]})
+
+
 # ── Gmail OAuth ───────────────────────────────────────────────────────────────
 
 def gmail_auth_start(request):

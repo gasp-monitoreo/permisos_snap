@@ -10,6 +10,8 @@ urlpatterns = [
     path('api/', api.urls),
     path('investigaciones/', views.serve_investigacion, name='inv-root'),
     path('investigaciones/<path:filepath>', views.serve_investigacion, name='inv-file'),
+    path('fotos/<str:archivo>', views.serve_foto, name='foto'),
+    path('login/fotos.json', views.login_fotos, name='login-fotos'),
     path('auth/gmail/start', views.gmail_auth_start, name='gmail-start'),
     path('auth/gmail/callback', views.gmail_auth_callback, name='gmail-callback'),
 ]
