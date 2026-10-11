@@ -154,7 +154,7 @@
     <p class="lead">Ingresa con tu cuenta institucional</p>
 
     {% if form.errors %}
-    <div class="error-msg">Usuario o contraseña incorrectos. Intente nuevamente.</div>
+    <div class="error-msg">{% for e in form.non_field_errors.as_data %}{% if e.code == 'bloqueado' %}{{ e.message }}{% else %}Usuario o contraseña incorrectos. Intente nuevamente.{% endif %}{% empty %}Usuario o contraseña incorrectos. Intente nuevamente.{% endfor %}</div>
     {% endif %}
 
     <form method="post">

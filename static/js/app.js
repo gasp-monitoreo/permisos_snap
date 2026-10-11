@@ -5,6 +5,18 @@
 
 'use strict';
 
+// ─── Escape de HTML (prevención de XSS) ───────────────────────────────────────
+// Todo dato externo (CeroFilas, Drive, nombres de archivo, etc.) que se interpole
+// en HTML debe pasar por escHtml(); las URLs en href/src por safeUrl().
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function safeUrl(u) {
+  const s = String(u ?? '').trim();
+  const ok = /^(https?:|mailto:)/i.test(s) || (s.startsWith('/') && !s.startsWith('//') && !s.startsWith('/\\'));
+  return escHtml(ok ? s : '#');
+}
+
 // ─── Estado global ────────────────────────────────────────────────────────────
 const STATE = {
   tramites: [],
@@ -148,13 +160,13 @@ function hideLoading() {
 function formatDate(str) {
   if (!str) return '–';
   const d = new Date(str);
-  if (isNaN(d)) return str;
+  if (isNaN(d)) return escHtml(str);
   return d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 function formatDateTime(str) {
   if (!str) return '–';
   const d = new Date(str);
-  if (isNaN(d)) return str;
+  if (isNaN(d)) return escHtml(str);
   return d.toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
@@ -166,7 +178,7 @@ function badgeHtml(estado, opts = {}) {
   };
   const cls = map[estado] || 'badge-otro';
   const labels = { pendiente: 'Pendiente', completado: 'Completado', rechazado: 'Rechazado' };
-  const badge = `<span class="badge ${cls}">${labels[estado] || estado}</span>`;
+  const badge = `<span class="badge ${cls}">${labels[estado] || escHtml(estado)}</span>`;
   if (opts.recepcionPendiente) {
     return badge + `<span class="badge-nota-recepcion" title="CONAF aprobó — pendiente recepción formal por parte del solicitante">📬 Recepción solicitante</span>`;
   }
@@ -177,9 +189,9 @@ function progressHtml(pct) {
   return `
     <div style="display:flex;align-items:center;gap:6px">
       <div class="progress-bar-wrap" style="flex:1">
-        <div class="progress-bar-fill" style="width:${pct}%"></div>
+        <div class="progress-bar-fill" style="width:${escHtml(pct)}%"></div>
       </div>
-      <span style="font-size:11px;font-weight:700;min-width:30px">${pct}%</span>
+      <span style="font-size:11px;font-weight:700;min-width:30px">${escHtml(pct)}%</span>
     </div>`;
 }
 
@@ -749,7 +761,7 @@ function renderFiltroRegiones() {
   const el = $('filtro-regiones');
   if (!el) return;
   if (window.PERFIL?.solo_su_region) {
-    el.innerHTML = `<div class="reg-filtro-head"><span>Región de ${PERFIL.region} <small>su perfil muestra solo esta región</small></span></div>`;
+    el.innerHTML = `<div class="reg-filtro-head"><span>Región de ${escHtml(PERFIL.region)} <small>su perfil muestra solo esta región</small></span></div>`;
     return;
   }
   const base = tramitesDelTipo({ todasLasRegiones: true });
@@ -757,14 +769,14 @@ function renderFiltroRegiones() {
   const btn = (valor, codigo, etiqueta, cantidad) => {
     const activo = (STATE.region || null) === valor;
     return `<button class="reg-btn${activo ? ' activo' : ''}${cantidad === 0 ? ' vacio' : ''}"
-      data-region="${valor || ''}" aria-pressed="${activo}" title="${etiqueta}: ${cantidad} solicitudes">
-      ${codigo ? `<span class="reg-cod">${codigo}</span>` : ''}<span class="reg-nom">${etiqueta}</span><span class="reg-n">${cantidad}</span>
+      data-region="${escHtml(valor || '')}" aria-pressed="${activo}" title="${escHtml(etiqueta)}: ${cantidad} solicitudes">
+      ${codigo ? `<span class="reg-cod">${escHtml(codigo)}</span>` : ''}<span class="reg-nom">${escHtml(etiqueta)}</span><span class="reg-n">${cantidad}</span>
     </button>`;
   };
   el.innerHTML = `
     <div class="reg-filtro-head">
       <span>Filtrar por región <small>de norte a sur</small></span>
-      ${STATE.region ? `<button class="reg-limpiar" data-region="">✕ Quitar filtro: ${STATE.region}</button>` : ''}
+      ${STATE.region ? `<button class="reg-limpiar" data-region="">✕ Quitar filtro: ${escHtml(STATE.region)}</button>` : ''}
     </div>
     <div class="reg-btns">
       ${btn(null, '', 'Todas', base.length)}
@@ -1399,7 +1411,7 @@ function muestrasBadge(tramite) {
   if (v === null) return '<span style="color:var(--muted);font-size:11px">–</span>';
   if (v === true) return '<span style="background:#E8F5E9;color:#1B5E20;border:1px solid #81C784;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">✓ Sí</span>';
   if (v === false) return '<span style="background:#fafafa;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:2px 8px;font-size:11px">✗ No</span>';
-  return `<span title="${v}" style="background:#FFF8E1;color:#7D4E00;border:1px solid #FFB300;border-radius:10px;padding:2px 8px;font-size:11px">⚗ Sí</span>`;
+  return `<span title="${escHtml(v)}" style="background:#FFF8E1;color:#7D4E00;border:1px solid #FFB300;border-radius:10px;padding:2px 8px;font-size:11px">⚗ Sí</span>`;
 }
 
 // ─── Tabla de investigaciones entregadas ──────────────────────────────────────
@@ -1459,7 +1471,7 @@ function renderTablaEntregadas(filtroTema) {
     filtroEl.innerHTML = ['', ...temasCanon].map(t => {
       const activo = t === filtroTema ? 'tema-filter-btn--active' : '';
       const label  = t || 'Todos';
-      return `<button class="tema-filter-btn ${activo}" data-tema="${(t||'').replace(/"/g,'&quot;')}">${label}</button>`;
+      return `<button class="tema-filter-btn ${activo}" data-tema="${escHtml(t || '')}">${escHtml(label)}</button>`;
     }).join('');
     filtroEl.onclick = ev => {
       const btn = ev.target.closest('.tema-filter-btn');
@@ -1501,7 +1513,7 @@ function renderTablaEntregadas(filtroTema) {
       const nombre = formatNombre(e.carpeta.replace(/_/g,' '));
 
       const archivoLinks = e.archivos.map(a =>
-        `<a href="${a.url}" target="_blank" class="entregadas-archivo-link">📄 ${a.nombre}<small style="color:var(--muted);margin-left:4px">${a.size_kb} KB</small></a>`
+        `<a href="${safeUrl(a.url)}" target="_blank" class="entregadas-archivo-link">📄 ${escHtml(a.nombre)}<small style="color:var(--muted);margin-left:4px">${escHtml(a.size_kb)} KB</small></a>`
       ).join('');
 
       const estadoCell = e.tramite
@@ -1519,28 +1531,28 @@ function renderTablaEntregadas(filtroTema) {
       let tituloHtml;
       if (enIngles) {
         pendientesTraduccion.push({ uid, texto: e.titulo });
-        tituloHtml = `<span id="trad-${uid}" title="Traduciendo…">${tituloFmt}</span>
+        tituloHtml = `<span id="trad-${uid}" title="Traduciendo…">${escHtml(tituloFmt)}</span>
           <span style="font-size:10px;color:var(--muted);margin-left:4px">[EN]</span>`;
       } else {
-        tituloHtml = `<span>${tituloFmt}</span>`;
+        tituloHtml = `<span>${escHtml(tituloFmt)}</span>`;
       }
 
       const muestrasCell = muestrasBadge(e.tramite);
 
       return `<tr>
-        <td style="font-weight:600;white-space:nowrap;font-size:13px">${nombre}</td>
+        <td style="font-weight:600;white-space:nowrap;font-size:13px">${escHtml(nombre)}</td>
         <td>${idCell}</td>
         <td style="font-size:12px;max-width:240px">${tituloHtml}</td>
         <td style="text-align:center">${muestrasCell}</td>
         <td>${archivoLinks}</td>
-        <td style="font-size:12px;color:var(--muted)">${e.regs || '–'}</td>
+        <td style="font-size:12px;color:var(--muted)">${escHtml(e.regs || '–')}</td>
         <td>${estadoCell}</td>
       </tr>`;
     }).join('');
 
     html += `
       <div style="padding:8px 16px;font-weight:700;font-size:13px;background:var(--surface2);border-top:2px solid var(--border)">
-        🏷️ ${tema} <span style="font-weight:400;color:var(--muted)">(${lista.length})</span>
+        🏷️ ${escHtml(tema)} <span style="font-weight:400;color:var(--muted)">(${lista.length})</span>
       </div>
       <table>
         <thead><tr>
@@ -1655,10 +1667,10 @@ function renderTablaVencimientos() {
         <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
         <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente })}</td>
         <td>${tipoBadgeHtml(t)}</td>
-        <td>${t.nombre_solicitante || '–'}</td>
+        <td>${escHtml(t.nombre_solicitante || '–')}</td>
         <td>${regionMiniMapHtml(t)}</td>
-        <td>${responsable}</td>
-        <td>${email}</td>
+        <td>${escHtml(responsable)}</td>
+        <td>${escHtml(email)}</td>
         <td><strong>${diffLabel}</strong>${origenLabel}</td>
         <td>${formatDate(fv)}</td>
       </tr>`;
@@ -1708,7 +1720,7 @@ function renderTablaRecientes() {
       <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
       <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente })}</td>
       <td>${tipoBadgeHtml(t)}</td>
-      <td>${t.nombre_solicitante || '–'}</td>
+      <td>${escHtml(t.nombre_solicitante || '–')}</td>
       <td>${regionMiniMapHtml(t)}</td>
       <td>${progressHtml(t.porcentaje_avance)}</td>
       <td>${formatDate(t.fecha_inicio)}</td>
@@ -1764,12 +1776,12 @@ function renderDuplicadosSection() {
     const tituloShort = tituloRaw.length > 80 ? tituloRaw.slice(0, 80) + '…' : tituloRaw;
     const btns = grupo.map(t =>
       `<button class="btn-detalle" onclick="openModal(${t.id})" style="font-size:11px;padding:3px 8px">
-        #${t.id} ${(t.regiones_list||[]).length ? '– ' + (t.regiones_list||[]).join(', ') : ''}
+        #${t.id} ${(t.regiones_list||[]).length ? '– ' + escHtml((t.regiones_list||[]).join(', ')) : ''}
       </button>`
     ).join('');
     return `<tr>
-      <td>${rep.nombre_solicitante || '–'}<br><small style="color:var(--muted)">${rep.email_solicitante || ''}</small></td>
-      <td style="font-size:12px">${tituloShort}</td>
+      <td>${escHtml(rep.nombre_solicitante || '–')}<br><small style="color:var(--muted)">${escHtml(rep.email_solicitante || '')}</small></td>
+      <td style="font-size:12px">${escHtml(tituloShort)}</td>
       <td><div style="display:flex;flex-wrap:wrap;gap:6px">${btns}</div></td>
     </tr>`;
   }).join('');
@@ -1893,7 +1905,7 @@ function _uploadPanelHtml(t) {
   const archHtml = archExist.length
     ? `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">Archivos ya subidos en esta solicitud:</div>
        <div class="upload-archivos-existentes">${archExist.map(a =>
-         `<a class="upload-archivo-link" href="${a.url}" target="_blank">📄 ${a.nombre}</a>`
+         `<a class="upload-archivo-link" href="${safeUrl(a.url)}" target="_blank">📄 ${escHtml(a.nombre)}</a>`
        ).join('')}</div>`
     : `<div style="font-size:12px;color:var(--muted)">Sin archivos subidos aún para esta solicitud (ID ${t.id}).</div>`;
 
@@ -1902,8 +1914,8 @@ function _uploadPanelHtml(t) {
       <td colspan="12">
         <div class="upload-panel">
           <div class="upload-panel-header">
-            📁 Archivos de investigación — ${nombre}
-            <span style="font-weight:400;font-size:12px;color:var(--muted)"> → Investigaciones/${carpeta}/${t.id}/</span>
+            📁 Archivos de investigación — ${escHtml(nombre)}
+            <span style="font-weight:400;font-size:12px;color:var(--muted)"> → Investigaciones/${escHtml(carpeta)}/${t.id}/</span>
           </div>
           ${avisoExt}
           ${archHtml}
@@ -1922,7 +1934,7 @@ function _uploadPanelHtml(t) {
           <ul class="upload-file-list" id="file-list-${t.id}"></ul>
           <div style="display:flex;gap:8px;align-items:center">
             <button class="btn-primary" style="padding:6px 18px"
-                    onclick="invSubirArchivos(${t.id}, '${nombre.replace(/'/g,"\\'")}', '${carpeta}')">
+                    onclick="invSubirArchivos(${t.id}, ${escHtml(JSON.stringify(nombre))}, ${escHtml(JSON.stringify(carpeta))})">
               ⬆️ Subir archivos
             </button>
             <span id="upload-status-${t.id}" style="font-size:12px;color:var(--muted)"></span>
@@ -1953,7 +1965,7 @@ function _renderFileList(tramiteId) {
   const files = _uploadPendiente[tramiteId] || [];
   ul.innerHTML = files.map((f, i) =>
     `<li class="upload-file-item">
-      <span>📄 ${f.name} <small style="color:var(--muted)">(${(f.size/1024).toFixed(0)} KB)</small></span>
+      <span>📄 ${escHtml(f.name)} <small style="color:var(--muted)">(${(f.size/1024).toFixed(0)} KB)</small></span>
       <span class="rm" onclick="_removeFile(${tramiteId},${i})">✕</span>
     </li>`
   ).join('');
@@ -2006,7 +2018,7 @@ async function invSubirArchivos(tramiteId, nombre, carpeta) {
 
 function renderSearchResults(tramites, query, hint = '') {
   if (!tramites.length) {
-    $('search-results').innerHTML = `<div class="empty-msg">No se encontraron trámites para "<strong>${query}</strong>" ${hint}</div>`;
+    $('search-results').innerHTML = `<div class="empty-msg">No se encontraron trámites para "<strong>${escHtml(query)}</strong>" ${escHtml(hint)}</div>`;
     return;
   }
 
@@ -2019,7 +2031,7 @@ function renderSearchResults(tramites, query, hint = '') {
       ? `${CONAF_BASE}/ver_etapa/${etapaId}`
       : `${CONAF_BASE}/ver/${t.id}`;
     const authBtn = auth
-      ? `<a class="btn-auth-dl" href="${conafUrl}" target="_blank" rel="noopener">📄 Ver en CONAF</a>`
+      ? `<a class="btn-auth-dl" href="${safeUrl(conafUrl)}" target="_blank" rel="noopener">📄 Ver en CONAF</a>`
       : `<span style="color:#aaa;font-size:12px">–</span>`;
 
     // Botón de archivos solo para investigaciones
@@ -2043,9 +2055,9 @@ function renderSearchResults(tramites, query, hint = '') {
       <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
       <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente })}</td>
       <td>${tipoBadgeHtml(t)}</td>
-      <td>${nombreProceso(t.proceso_id).slice(0, 40)}</td>
-      <td>${t.nombre_solicitante || '–'}</td>
-      <td>${t.email_solicitante || '–'}</td>
+      <td>${escHtml(nombreProceso(t.proceso_id).slice(0, 40))}</td>
+      <td>${escHtml(t.nombre_solicitante || '–')}</td>
+      <td>${escHtml(t.email_solicitante || '–')}</td>
       <td>${regionMiniMapHtml(t)}</td>
       <td>${progressHtml(t.porcentaje_avance)}</td>
       <td>${formatDate(t.fecha_inicio)}</td>
@@ -2059,8 +2071,8 @@ function renderSearchResults(tramites, query, hint = '') {
 
   $('search-results').innerHTML = `
     <div style="padding:12px 16px;background:#f8f9fa;border-bottom:1px solid #dee2e6;font-weight:700;color:#2E7D32">
-      ${tramites.length} resultado${tramites.length !== 1 ? 's' : ''} para "${query}"
-      ${hint ? `<span style="font-weight:400;font-size:12px;color:#666;margin-left:8px">${hint}</span>` : ''}
+      ${tramites.length} resultado${tramites.length !== 1 ? 's' : ''} para "${escHtml(query)}"
+      ${hint ? `<span style="font-weight:400;font-size:12px;color:#666;margin-left:8px">${escHtml(hint)}</span>` : ''}
     </div>
     <table>
       <thead><tr>
@@ -2091,7 +2103,7 @@ async function openModal(tramiteId) {
     const t = await loadTramite(tramiteId);
     renderModalBody(t);
   } catch (err) {
-    body.innerHTML = `<div class="empty-msg">Error: ${err.message}</div>`;
+    body.innerHTML = `<div class="empty-msg">Error: ${escHtml(err.message)}</div>`;
   }
 }
 
@@ -2229,9 +2241,9 @@ function renderTablaJson(rawVal) {
   return `
     <div style="overflow-x:auto;margin-top:6px">
       <table class="tabla-json">
-        <thead><tr>${headers.map(h => `<th>${h ?? ''}</th>`).join('')}</tr></thead>
+        <thead><tr>${headers.map(h => `<th>${escHtml(h ?? '')}</th>`).join('')}</tr></thead>
         <tbody>${rows.map(row =>
-          `<tr>${headers.map((_, i) => `<td>${row[i] ?? '–'}</td>`).join('')}</tr>`
+          `<tr>${headers.map((_, i) => `<td>${escHtml(row[i] ?? '–')}</td>`).join('')}</tr>`
         ).join('')}</tbody>
       </table>
     </div>`;
@@ -2284,7 +2296,7 @@ function renderModalBody(t) {
     const raw = valor ?? datos[campo];
     if (raw == null || raw === '') return ''; // omitir campos vacíos
     const vMostrar = humanizarValorCampo(raw) ?? String(raw);
-    return `<div class="modal-kv-item"><span class="label">${etiqueta}</span><span class="value">${vMostrar}</span></div>`;
+    return `<div class="modal-kv-item"><span class="label">${escHtml(etiqueta)}</span><span class="value">${escHtml(vMostrar)}</span></div>`;
   }
 
   // Busca el valor en datos_raw por posibles nombres alternativos.
@@ -2394,9 +2406,9 @@ function renderModalBody(t) {
           <tbody>
             ${filasRegion.map(({ regionNombre, areas }) => `
               <tr>
-                <td>${regionNombre}</td>
+                <td>${escHtml(regionNombre)}</td>
                 <td>${areas.length
-                  ? areas.map(a => `<div class="area-item">• ${a}</div>`).join('')
+                  ? areas.map(a => `<div class="area-item">• ${escHtml(a)}</div>`).join('')
                   : '–'}</td>
               </tr>`).join('')}
           </tbody>
@@ -2427,7 +2439,7 @@ function renderModalBody(t) {
       const tabla = renderTablaJson(v);
       if (tabla) {
         return `<div class="modal-kv-item modal-kv-item--full">
-          <span class="label">${label}</span>${tabla}
+          <span class="label">${escHtml(label)}</span>${tabla}
         </div>`;
       }
       // Valor humanizado normal
@@ -2435,11 +2447,11 @@ function renderModalBody(t) {
       // Texto largo → fila completa con salto de línea
       if (display.length > 80) {
         return `<div class="modal-kv-item modal-kv-item--full">
-          <span class="label">${label}</span>
-          <span class="value" style="margin-top:4px;line-height:1.6">${display}</span>
+          <span class="label">${escHtml(label)}</span>
+          <span class="value" style="margin-top:4px;line-height:1.6">${escHtml(display)}</span>
         </div>`;
       }
-      return `<div class="modal-kv-item"><span class="label">${label}</span><span class="value">${display}</span></div>`;
+      return `<div class="modal-kv-item"><span class="label">${escHtml(label)}</span><span class="value">${escHtml(display)}</span></div>`;
     }).join('');
 
   // ── Adjuntos ────────────────────────────────────────────────────────────────
@@ -2454,9 +2466,9 @@ function renderModalBody(t) {
         <span style="font-size:22px">📋</span>
         <div style="flex:1">
           <div style="font-weight:700;color:#1565C0;font-size:14px">Autorización / Resolución Final</div>
-          <div style="font-size:12px;color:#555;margin-top:2px">Archivo: ${datos[authFileKey]}</div>
+          <div style="font-size:12px;color:#555;margin-top:2px">Archivo: ${escHtml(datos[authFileKey])}</div>
         </div>
-        <a class="btn-auth-dl" href="${authEtapaId ? `${CONAF_SEG}/ver_etapa/${authEtapaId}` : `${CONAF_SEG}/ver/${t.id}`}"
+        <a class="btn-auth-dl" href="${safeUrl(authEtapaId ? `${CONAF_SEG}/ver_etapa/${authEtapaId}` : `${CONAF_SEG}/ver/${t.id}`)}"
            target="_blank" rel="noopener">📄 Ver en CONAF</a>
       </div>
     </div>` : '';
@@ -2472,10 +2484,10 @@ function renderModalBody(t) {
           const conafUrl = authEtapaId && /autori|aprob|firmad|resolu/i.test(k)
             ? `${CONAF_SEG}/ver_etapa/${authEtapaId}`
             : `${CONAF_SEG}/ver/${t.id}`;
-          return `<a class="btn-adjunto" href="${conafUrl}" target="_blank" rel="noopener" title="${valor}">
+          return `<a class="btn-adjunto" href="${safeUrl(conafUrl)}" target="_blank" rel="noopener" title="${escHtml(valor)}">
             <span class="adjunto-icono">${icono}</span>
-            <span class="adjunto-nombre">${nombre}</span>
-            <span class="badge-ext">${ext}</span>
+            <span class="adjunto-nombre">${escHtml(nombre)}</span>
+            <span class="badge-ext">${escHtml(ext)}</span>
           </a>`;
         }).join('')}
       </div>
@@ -2487,12 +2499,12 @@ function renderModalBody(t) {
     const vencida = e.estado === 'pendiente' && isVencida(e.fecha_vencimiento);
     const clase   = `etapa-item etapa-${e.estado || 'otro'} ${vencida ? 'etapa-vencida' : ''}`;
     return `
-      <div class="${clase}">
+      <div class="${escHtml(clase)}">
         <div class="etapa-header">
-          <span class="etapa-nombre">Etapa ${i + 1} – ID #${e.id}</span>
+          <span class="etapa-nombre">Etapa ${i + 1} – ID #${escHtml(e.id)}</span>
           ${badgeHtml(e.estado)}
         </div>
-        <div class="etapa-usuario">👤 ${e.nombres || 'Sin asignar'} &nbsp;|&nbsp; ✉️ ${e.email || '–'}</div>
+        <div class="etapa-usuario">👤 ${escHtml(e.nombres || 'Sin asignar')} &nbsp;|&nbsp; ✉️ ${escHtml(e.email || '–')}</div>
         <div class="etapa-fechas">
           Inicio: ${formatDate(e.fecha_inicio)} &nbsp;|&nbsp;
           Término: ${formatDate(e.fecha_termino)} &nbsp;|&nbsp;
@@ -2505,7 +2517,7 @@ function renderModalBody(t) {
 
   // ── EMAIL con link ──────────────────────────────────────────────────────────
   const emailHtml = t.email_solicitante
-    ? `<a href="mailto:${t.email_solicitante}">${t.email_solicitante}</a>`
+    ? `<a href="${safeUrl('mailto:' + t.email_solicitante)}">${escHtml(t.email_solicitante)}</a>`
     : '–';
 
   // ── Banner de borrador ──────────────────────────────────────────────────────
@@ -2527,7 +2539,7 @@ function renderModalBody(t) {
         </div>
         <div style="font-size:13px;color:#7D4E00;line-height:1.5">
           Este trámite se encuentra en estado <strong>borrador</strong>: el solicitante
-          <strong>${t.nombre_solicitante || t.email_solicitante || 'desconocido'}</strong>
+          <strong>${escHtml(t.nombre_solicitante || t.email_solicitante || 'desconocido')}</strong>
           inició la solicitud pero <strong>todavía no terminó de completar ni enviar el formulario</strong>.
           <br>No requiere acción de parte de CONAF hasta que el solicitante lo envíe.
         </div>
@@ -2559,7 +2571,7 @@ function renderModalBody(t) {
         <div style="display:flex;flex-wrap:wrap;gap:8px">
           ${relacionados.map(r => `
             <button onclick="openModal(${r.id})" class="btn-detalle" style="background:#E65100;font-size:12px">
-              #${r.id} — ${(r.regiones_list||[]).join(', ')||'Sin región'}
+              #${r.id} — ${escHtml((r.regiones_list||[]).join(', ')||'Sin región')}
             </button>`).join('')}
         </div>
       </div>
@@ -2574,15 +2586,15 @@ function renderModalBody(t) {
       <div class="modal-kv">
         <div class="modal-kv-item"><span class="label">ID</span><span class="value fw-bold">#${t.id}</span></div>
         <div class="modal-kv-item"><span class="label">Estado</span><span class="value">${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente })}</span></div>
-        <div class="modal-kv-item"><span class="label">Proceso</span><span class="value">${nombreProceso(t.proceso_id)}</span></div>
+        <div class="modal-kv-item"><span class="label">Proceso</span><span class="value">${escHtml(nombreProceso(t.proceso_id))}</span></div>
         <div class="modal-kv-item"><span class="label">Tipo</span><span class="value">${tipoBadgeHtml(t)}</span></div>
         <div class="modal-kv-item"><span class="label">Fecha Inicio</span><span class="value">${formatDateTime(t.fecha_inicio)}</span></div>
         <div class="modal-kv-item"><span class="label">Fecha Modificación</span><span class="value">${formatDateTime(t.fecha_modificacion)}</span></div>
         <div class="modal-kv-item"><span class="label">Fecha Término</span><span class="value">${formatDateTime(t.fecha_termino)}</span></div>
-        <div class="modal-kv-item"><span class="label">Región</span><span class="value">${t.region || '–'}</span></div>
+        <div class="modal-kv-item"><span class="label">Región</span><span class="value">${escHtml(t.region || '–')}</span></div>
         ${t.estado === 'rechazado' && t.motivo_rechazo ? `
         <div class="modal-kv-item modal-kv-item--full"><span class="label">Motivo del rechazo (CONAF)</span>
-          <span class="value motivo-rechazo">${_esc(t.motivo_rechazo)}</span></div>` : ''}
+          <span class="value motivo-rechazo">${escHtml(t.motivo_rechazo)}</span></div>` : ''}
       </div>
     </div>
 
@@ -2590,7 +2602,7 @@ function renderModalBody(t) {
     <div class="modal-section">
       <h3>Datos del Solicitante</h3>
       <div class="modal-kv">
-        <div class="modal-kv-item"><span class="label">Nombre</span><span class="value fw-bold">${t.nombre_solicitante || '–'}</span></div>
+        <div class="modal-kv-item"><span class="label">Nombre</span><span class="value fw-bold">${escHtml(t.nombre_solicitante || '–')}</span></div>
         <div class="modal-kv-item"><span class="label">Email</span><span class="value">${emailHtml}</span></div>
         ${kvFijo('cedula_de_identidad',        'Cédula de Identidad', buscarDato('cedula_de_identidad','cedula_identidad','rut','run'))}
         ${kvFijo('telefono_fijo_coordinador',  'Teléfono Fijo',       buscarDato('telefono_fijo_coordinador','fono_fijo','telefono_fijo','fono_fijo_coordinador','fono','telefono'))}
@@ -2629,12 +2641,12 @@ function renderModalBody(t) {
       ${(buscarDato('objetivos_del_proyecto') ? `
         <div class="modal-kv-item modal-kv-item--full" style="padding-top:8px">
           <span class="label">Objetivos del Proyecto</span>
-          <span class="value" style="margin-top:4px;line-height:1.5">${buscarDato('objetivos_del_proyecto')}</span>
+          <span class="value" style="margin-top:4px;line-height:1.5">${escHtml(buscarDato('objetivos_del_proyecto'))}</span>
         </div>` : '')}
       ${(buscarDato('especifique_apoyo') ? `
         <div class="modal-kv-item modal-kv-item--full" style="padding-top:8px">
           <span class="label">Detalle apoyo solicitado</span>
-          <span class="value" style="margin-top:4px;line-height:1.5">${buscarDato('especifique_apoyo')}</span>
+          <span class="value" style="margin-top:4px;line-height:1.5">${escHtml(buscarDato('especifique_apoyo'))}</span>
         </div>` : '')}
     </div>
 
@@ -2657,11 +2669,11 @@ function renderModalBody(t) {
       <h3>Progreso del Trámite</h3>
       <div style="margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-          <span>${t.etapas_completadas} de ${t.total_etapas} etapas completadas</span>
-          <strong>${t.porcentaje_avance}%</strong>
+          <span>${escHtml(t.etapas_completadas)} de ${escHtml(t.total_etapas)} etapas completadas</span>
+          <strong>${escHtml(t.porcentaje_avance)}%</strong>
         </div>
         <div class="progress-bar-wrap" style="height:14px">
-          <div class="progress-bar-fill" style="width:${t.porcentaje_avance}%"></div>
+          <div class="progress-bar-fill" style="width:${escHtml(t.porcentaje_avance)}%"></div>
         </div>
       </div>
     </div>
@@ -2695,7 +2707,7 @@ function renderModalBody(t) {
       const inv = getArchivosTramite(t.id, t.nombre_solicitante || '');
       if (!inv || inv.archivos.length === 0) return '';
       const fileRows = inv.archivos.map(a =>
-        `<tr><td style="padding:7px 10px"><a href="${a.url}" target="_blank" style="color:var(--accent)">${a.nombre}</a></td><td style="padding:7px 10px;color:var(--muted);text-align:right;white-space:nowrap">${a.size_kb} KB</td></tr>`
+        `<tr><td style="padding:7px 10px"><a href="${safeUrl(a.url)}" target="_blank" style="color:var(--accent)">${escHtml(a.nombre)}</a></td><td style="padding:7px 10px;color:var(--muted);text-align:right;white-space:nowrap">${escHtml(a.size_kb)} KB</td></tr>`
       ).join('');
       return `<div class="detail-section" style="margin-top:18px">
     <div class="detail-section-title">📁 Archivos entregados (Numeral 6)</div>
@@ -2707,7 +2719,7 @@ function renderModalBody(t) {
       <tbody>${fileRows}</tbody>
     </table>
     <div style="margin-top:10px">
-      <a href="${inv.url}" target="_blank" class="btn-export" style="font-size:12px;padding:6px 14px">📂 Abrir carpeta</a>
+      <a href="${safeUrl(inv.url)}" target="_blank" class="btn-export" style="font-size:12px;padding:6px 14px">📂 Abrir carpeta</a>
     </div>
   </div>`;
     })()}
@@ -2725,9 +2737,9 @@ function renderModalBody(t) {
       if (rl.length === 0) {
         regionBadge = '<span class="badge-en-plazo">Sin información de región</span>';
       } else if (rl.length === 1) {
-        regionBadge = `<span class="badge-regional">🗺 Regional — ${rl[0]}</span>`;
+        regionBadge = `<span class="badge-regional">🗺 Regional — ${escHtml(rl[0])}</span>`;
       } else {
-        regionBadge = `<span class="badge-multiregional">🗺 Multirregional — ${rl.join(', ')}</span>`;
+        regionBadge = `<span class="badge-multiregional">🗺 Multirregional — ${escHtml(rl.join(', '))}</span>`;
       }
 
       // Plazo 3 años desde fecha_termino
@@ -2800,8 +2812,8 @@ function renderHistoricoInvestigaciones() {
   function tipoRegion(t) {
     const rl = t.regiones_list || [];
     if (rl.length === 0) return { label: '–', clase: '' };
-    if (rl.length === 1) return { label: `Regional<br><small>${rl[0]}</small>`, clase: 'badge-regional' };
-    return { label: `Multirregional<br><small>${rl.join(', ')}</small>`, clase: 'badge-multiregional' };
+    if (rl.length === 1) return { label: `Regional<br><small>${escHtml(rl[0])}</small>`, clase: 'badge-regional' };
+    return { label: `Multirregional<br><small>${escHtml(rl.join(', '))}</small>`, clase: 'badge-multiregional' };
   }
 
   // Estado de entrega de resultados (solo aplica a completados, no rechazados)
@@ -2814,7 +2826,7 @@ function renderHistoricoInvestigaciones() {
     if (tieneArchivos) {
       const url = inv.url;
       return {
-        html: `<a href="${url}" target="_blank" class="badge-entregado">✅ Entregados<br><small>${inv.archivos.length} archivo(s)</small></a>`,
+        html: `<a href="${safeUrl(url)}" target="_blank" class="badge-entregado">✅ Entregados<br><small>${inv.archivos.length} archivo(s)</small></a>`,
         sort: 0,
       };
     }
@@ -2843,7 +2855,7 @@ function renderHistoricoInvestigaciones() {
   const htmlRows = rows.map(({ t, plazo, region, entrega }) => `
     <tr>
       <td style="white-space:nowrap"><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
-      <td>${t.nombre_solicitante || '–'}</td>
+      <td>${escHtml(t.nombre_solicitante || '–')}</td>
       <td>${t.estado === 'rechazado'
         ? '<span class="badge" style="background:#f8d7da;color:#721c24">Rechazado</span>'
         : '<span class="badge" style="background:#d4edda;color:#155724">Aprobado</span>'}</td>
@@ -2960,8 +2972,11 @@ function correoAbrirGmail(i) {
 }
 
 function buildEmailHtml(nombre, titulo, anios, region) {
-  const aniosFmt = String(anios).replace(/\.0$/, '');
-  const regionStr = region || 'el SNAP';
+  // Datos del solicitante escapados: este HTML se inserta con innerHTML en la vista previa
+  nombre = escHtml(nombre);
+  titulo = escHtml(titulo);
+  const aniosFmt = escHtml(String(anios).replace(/\.0$/, ''));
+  const regionStr = escHtml(region || 'el SNAP');
   return `<!DOCTYPE html>
 <html><body style="font-family:Arial,sans-serif;font-size:14px;color:#333;max-width:680px;margin:0 auto;padding:20px">
 <p>Estimado/a <strong>${nombre}</strong>,</p>
@@ -3015,14 +3030,14 @@ function correoRenderLista() {
          <button class="btn-correo-omitir" onclick="correoOmitir(${i})">⏭ Omitir</button>`
       : `<button class="btn-correo-ver"    onclick="correoVer(${i})">👁 Ver</button>
          <button class="btn-correo-enviar" onclick="correoAbrirGmail(${i})">↩ Reabrir</button>`;
-    const errorHtml = c._error ? `<div class="correo-error">${c._error}</div>` : '';
-    return `<tr id="correo-row-${i}" class="correo-row correo-row--${st}">
-      <td style="font-size:12px;font-weight:700;color:var(--muted)">#${c.id}</td>
-      <td><strong>${c.nombre_solicitante || '–'}</strong></td>
-      <td><a href="mailto:${c.email_solicitante}" style="color:inherit">${c.email_solicitante || '–'}</a></td>
-      <td class="correo-titulo">${(c.titulo_investigacion || '–').slice(0,70)}${c.titulo_investigacion?.length > 70 ? '…' : ''}</td>
-      <td style="white-space:nowrap"><span class="badge-compliance-${c.anios_transcurridos >= 5 ? 'critico' : 'moderado'}">${c.anios_transcurridos} años</span></td>
-      <td>${c.region || '–'}</td>
+    const errorHtml = c._error ? `<div class="correo-error">${escHtml(c._error)}</div>` : '';
+    return `<tr id="correo-row-${i}" class="correo-row correo-row--${escHtml(st)}">
+      <td style="font-size:12px;font-weight:700;color:var(--muted)">#${escHtml(c.id)}</td>
+      <td><strong>${escHtml(c.nombre_solicitante || '–')}</strong></td>
+      <td><a href="${safeUrl('mailto:' + c.email_solicitante)}" style="color:inherit">${escHtml(c.email_solicitante || '–')}</a></td>
+      <td class="correo-titulo">${escHtml((c.titulo_investigacion || '–').slice(0,70))}${c.titulo_investigacion?.length > 70 ? '…' : ''}</td>
+      <td style="white-space:nowrap"><span class="badge-compliance-${c.anios_transcurridos >= 5 ? 'critico' : 'moderado'}">${escHtml(c.anios_transcurridos)} años</span></td>
+      <td>${escHtml(c.region || '–')}</td>
       <td>${stBadge}${errorHtml}</td>
       <td class="correo-acciones">${acciones}</td>
     </tr>`;
@@ -3040,7 +3055,7 @@ function correoVer(i) {
   const c = STATE.correos[i];
   const html = buildEmailHtml(c.nombre_solicitante, c.titulo_investigacion, c.anios_transcurridos, c.region);
   $('preview-meta').innerHTML =
-    `<strong>Para:</strong> ${c.nombre_solicitante} &lt;${c.email_solicitante}&gt;<br>
+    `<strong>Para:</strong> ${escHtml(c.nombre_solicitante)} &lt;${escHtml(c.email_solicitante)}&gt;<br>
      <strong>Asunto:</strong> CONAF – Solicitud de entrega de informes y publicaciones de investigación en el SNAP`;
   $('preview-html').innerHTML = html;
   $('correos-preview').style.display = '';

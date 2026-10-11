@@ -7,6 +7,18 @@ from django.shortcuts import redirect, render
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 
+def salud(request):
+    """Estado para el healthcheck de Docker y el monitoreo externo (sin datos internos)."""
+    from django.db import connection
+    from django.http import JsonResponse
+    try:
+        with connection.cursor() as c:
+            c.execute('SELECT 1')
+        return JsonResponse({'ok': True})
+    except Exception:
+        return JsonResponse({'ok': False, 'error': 'base de datos'}, status=503)
+
+
 @login_required
 def index(request):
     import json
@@ -30,6 +42,8 @@ def cambiar_clave(request):
             error = 'La clave actual no es correcta.'
         elif len(nueva) < 8:
             error = 'La nueva clave debe tener al menos 8 caracteres.'
+        elif _clave_debil(nueva, request.user):
+            error = _clave_debil(nueva, request.user)
         elif nueva != repetir:
             error = 'Las claves nuevas no coinciden.'
         elif nueva == actual:
@@ -46,12 +60,29 @@ def cambiar_clave(request):
         'nombre': request.user.get_full_name() or request.user.username})
 
 
+def _clave_debil(clave, user):
+    """Mensaje si la clave es demasiado común, solo números o parecida al correo."""
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError
+    try:
+        validate_password(clave, user)
+    except ValidationError as e:
+        traducir = {'password_too_common': 'Esa clave es demasiado común; elija otra.',
+                    'password_entirely_numeric': 'La clave no puede tener solo números.',
+                    'password_too_similar': 'La clave se parece demasiado a su correo o nombre.'}
+        return next((traducir.get(x.code) for x in e.error_list if x.code in traducir), 'La clave no es segura.')
+    return ''
+
+
 # ── Investigaciones file serving ──────────────────────────────────────────────
 
 INV_DIR = settings.INVESTIGACIONES_DIR
 
 
 def _inv_html(folder_display, archivos):
+    from html import escape
+    folder_display = escape(folder_display)
+    archivos = [{**a, 'url': escape(a['url']), 'nombre': escape(a['nombre'])} for a in archivos]
     rows = ''.join(
         f'<tr><td><a href="{a["url"]}" target="_blank">{a["nombre"]}</a></td>'
         f'<td style="color:#666;text-align:right;white-space:nowrap">{a["size_kb"]} KB</td></tr>'
@@ -98,7 +129,9 @@ def serve_investigacion(request, filepath=''):
     clean     = filepath.rstrip('/')
     full_path = os.path.join(INV_DIR, clean) if clean else INV_DIR
 
-    if not os.path.abspath(full_path).startswith(os.path.abspath(INV_DIR)):
+    raiz = os.path.realpath(INV_DIR)
+    real = os.path.realpath(full_path)
+    if real != raiz and not real.startswith(raiz + os.sep):
         return HttpResponse('Acceso denegado', status=403)
 
     if os.path.isdir(full_path):
@@ -107,7 +140,9 @@ def serve_investigacion(request, filepath=''):
         return HttpResponse(_inv_html(display, archivos))
 
     if os.path.isfile(full_path):
-        return FileResponse(open(full_path, 'rb'), as_attachment=False,
+        # solo los PDF se muestran en el navegador; el resto se descarga
+        es_pdf = full_path.lower().endswith('.pdf')
+        return FileResponse(open(full_path, 'rb'), as_attachment=not es_pdf,
                             filename=os.path.basename(full_path))
 
     raise Http404(filepath)
@@ -179,5 +214,7 @@ def gmail_auth_callback(request):
             <p>Ya puedes cerrar esta pestaña.</p>
             <script>setTimeout(()=>window.close(),3000)</script>
         </body></html>''')
-    except Exception as exc:
-        return HttpResponse(f'Error OAuth: {exc}', status=500)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Error al vincular Gmail')
+        return HttpResponse('No se pudo vincular la cuenta de Google. Revise el registro del servidor.', status=500)

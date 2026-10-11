@@ -27,3 +27,10 @@ flask.log
 
 # Legado Flask
 app.py
+
+# Secretos: nunca dentro de la imagen
+.env.*
+!.env.example
+*.pem
+gmail_token.json
+gmail_credentials.json

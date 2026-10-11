@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cerofilas
+          POSTGRES_PASSWORD: cerofilas_secret
+          POSTGRES_DB: cerofilas
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cerofilas" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://cerofilas:cerofilas_secret@localhost:5432/cerofilas
+      SECRET_KEY: clave-solo-para-ci
+      DJANGO_DEBUG: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Revisión de Django (incluye opciones de seguridad para producción)
+        run: |
+          python manage.py check
+          CSRF_TRUSTED_ORIGINS=https://permisos.monitoreo-snap.cl DJANGO_ALLOWED_HOSTS=permisos.monitoreo-snap.cl \
+            SECRET_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(50))") \
+            python manage.py check --deploy --fail-level WARNING
+      - name: Migraciones al día
+        run: python manage.py makemigrations --check --dry-run
+      - name: Pruebas
+        run: pytest -q
+      - name: Sintaxis JavaScript
+        run: for f in static/js/*.js; do node --check "$f"; done
+
+  imagen:
+    runs-on: ubuntu-latest
+    needs: pruebas
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t permisos-snap:ci .

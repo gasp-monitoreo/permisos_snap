@@ -14,9 +14,17 @@ import time
 from collections import Counter, defaultdict
 from functools import wraps
 
+import logging
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
+from django.contrib.auth.forms import AuthenticationForm
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.http import JsonResponse
+from django.middleware.csrf import CsrfViewMiddleware
+
+log = logging.getLogger(__name__)
 
 from .models import PerfilUsuario, SECCIONES, secciones_por_defecto
 
@@ -84,14 +92,52 @@ class EmailBackend(ModelBackend):
 
 
 class SesionAuth:
-    """Autenticación de la API con la sesión de Django (la API antes era pública)."""
+    """Autenticación de la API con la sesión de Django (la API antes era pública).
+    Las operaciones que modifican datos exigen además el token CSRF (cabecera X-CSRFToken),
+    para que otro sitio no pueda usar la sesión abierta del usuario."""
     def __call__(self, request):
         u = getattr(request, 'user', None)
         if not (u and u.is_authenticated and u.is_active):
             return None
         if perfil_de(u).debe_cambiar_password:
             return None          # primero debe definir su clave
+        if request.method not in ('GET', 'HEAD', 'OPTIONS'):
+            rechazo = CsrfViewMiddleware(lambda r: None).process_view(request, None, (), {})
+            if rechazo is not None:
+                log.warning('CSRF rechazado en %s %s (usuario %s)', request.method, request.path, u.pk)
+                return None
         return u
+
+
+# ─── Freno a intentos de ingreso ─────────────────────────────────────────────
+MAX_FALLOS_USUARIO, MAX_FALLOS_IP, BLOQUEO_SEG = 5, 20, 15 * 60
+
+
+def ip_cliente(request):
+    """IP real: Caddy reemplaza X-Forwarded-For con la IP del cliente."""
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    return (xff.split(',')[-1].strip() if xff else '') or request.META.get('REMOTE_ADDR', '')
+
+
+class LoginForm(AuthenticationForm):
+    """Formulario de ingreso con bloqueo temporal: 5 fallos por cuenta o 20 por IP
+    bloquean 15 minutos (la cuenta no se bloquea para siempre: el atacante no puede
+    dejar fuera a un colega de forma permanente)."""
+    def clean(self):
+        usuario = (self.data.get('username') or '').strip().lower()
+        claves = [f'login:u:{usuario}', f'login:ip:{ip_cliente(self.request)}'] if self.request else []
+        if any(cache.get(k, 0) >= lim for k, lim in zip(claves, (MAX_FALLOS_USUARIO, MAX_FALLOS_IP))):
+            raise ValidationError('Demasiados intentos fallidos. Espere 15 minutos e intente de nuevo.',
+                                  code='bloqueado')
+        try:
+            datos = super().clean()
+        except ValidationError:
+            for k in claves:
+                cache.set(k, cache.get(k, 0) + 1, BLOQUEO_SEG)
+            log.warning('Ingreso fallido para %r desde %s', usuario, claves[1][9:] if claves else '?')
+            raise
+        cache.delete(claves[0]) if claves else None
+        return datos
 
 
 def _prohibido(msg):

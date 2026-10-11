@@ -1,5 +1,7 @@
 """Django Ninja API — todos los endpoints de la plataforma SNAP."""
 import io
+import json as _json
+import logging
 import os
 import re as _re
 import unicodedata
@@ -28,6 +30,8 @@ INV_EXTENSIONS = {'.pdf', '.doc', '.docx', '.csv', '.xls', '.xlsx'}
 DOMAIN        = 'https://conaf.cerofilas.gob.cl'
 
 from .usuarios import SesionAuth, perfil_de, requiere
+
+log = logging.getLogger(__name__)
 
 # Toda la API exige sesión iniciada (antes era pública y exponía datos personales)
 api = NinjaAPI(title='SNAP API', version='2.0', docs_url=None, auth=SesionAuth())
@@ -268,7 +272,20 @@ def _candidatos_archivo(archivo, tramite_id=''):
     ] if c]
 
 
+def _url_de_cerofilas(url):
+    """True solo si la URL es https y su host es exactamente el de CeroFilas.
+    El token de la API se envía a estas URLs: nunca a otro host."""
+    from urllib.parse import urlparse
+    try:
+        u, base = urlparse(url), urlparse(DOMAIN)
+    except ValueError:
+        return False
+    return u.scheme == 'https' and (u.hostname or '').lower() == base.hostname and u.port in (None, 443)         and not u.username and not u.password
+
+
 def _descargar_url(url):
+    if not _url_de_cerofilas(url):
+        return None, None
     TOKEN = settings.CEROFILAS_TOKEN
     for kwargs in [
         {'params': {'token': TOKEN}},
@@ -296,7 +313,7 @@ def descargar_adjunto(
     if not url and not archivo:
         return api.create_response(request, {'ok': False, 'error': 'Se requiere url o archivo'}, status=400)
     if url:
-        if not url.startswith(DOMAIN):
+        if not _url_de_cerofilas(url):
             return api.create_response(request, {'ok': False, 'error': 'URL no permitida'}, status=403)
         candidatos = [url]
     else:
@@ -598,6 +615,11 @@ def investigaciones_upload(
 ):
     if not nombre or not tramite_id:
         return api.create_response(request, {'ok': False, 'error': 'Faltan parámetros'}, status=400)
+    tramite_id = str(tramite_id).strip()
+    if not tramite_id.isdigit() or len(tramite_id) > 12:
+        return api.create_response(request, {'ok': False, 'error': 'ID de trámite inválido'}, status=400)
+    if len(archivos or []) > 20:
+        return api.create_response(request, {'ok': False, 'error': 'Máximo 20 archivos por envío'}, status=400)
 
     nombre_carpeta = _norm_nombre_carpeta(nombre)
     existente      = _carpeta_existente(nombre_carpeta)
@@ -616,8 +638,14 @@ def investigaciones_upload(
         if ext not in INV_EXTENSIONS:
             errores.append(f'{f.name}: extensión no permitida ({ext})')
             continue
+        if f.size > 50 * 1024 * 1024:
+            errores.append(f'{f.name}: supera 50 MB')
+            continue
         try:
             dest = os.path.join(destino, fname)
+            if not os.path.abspath(dest).startswith(os.path.abspath(INV_DIR) + os.sep):
+                errores.append(f'{fname}: ruta no permitida')
+                continue
             with open(dest, 'wb') as out:
                 for chunk in f.chunks():
                     out.write(chunk)
@@ -633,21 +661,35 @@ def investigaciones_upload(
 
 @api.post('/translate')
 def translate_text(request):
-    data  = request.body and __import__('json').loads(request.body) or {}
-    texto = data.get('text', '').strip()
+    import hashlib
+    from django.core.cache import cache
+    try:
+        data = _json.loads(request.body or b'{}')
+    except ValueError:
+        data = {}
+    texto = str(data.get('text') or '').strip()[:500]
     if not texto:
         return {'ok': True, 'traduccion': texto}
+    clave = 'trad:' + hashlib.sha1(texto.encode()).hexdigest()
+    if (guardada := cache.get(clave)) is not None:
+        return {'ok': True, 'traduccion': guardada}
+    if cache.get('trad:caido'):             # tras una falla, no insistir por 10 minutos
+        return {'ok': False, 'error': 'Traductor no disponible', 'traduccion': texto}
+    params = {'q': texto, 'langpair': 'en|es'}
+    if settings.MYMEMORY_EMAIL:             # cuota diaria mayor en MyMemory
+        params['de'] = settings.MYMEMORY_EMAIL
     try:
-        resp = _requests.get(
-            'https://api.mymemory.translated.net/get',
-            params={'q': texto, 'langpair': 'en|es', 'de': 'ignacio.diaz@conaf.cl'},
-            timeout=6,
-        )
-        data      = resp.json()
-        traduccion = data.get('responseData', {}).get('translatedText', texto)
+        data = _requests.get('https://api.mymemory.translated.net/get', params=params, timeout=6).json()
+        if int(data.get('responseStatus') or 0) != 200:     # p. ej. cuota agotada: no mostrar el aviso como traducción
+            cache.set('trad:caido', 1, 600)
+            return {'ok': False, 'error': 'Traductor no disponible', 'traduccion': texto}
+        traduccion = (data.get('responseData') or {}).get('translatedText') or texto
+        cache.set(clave, traduccion, 30 * 24 * 3600)
         return {'ok': True, 'traduccion': traduccion}
-    except Exception as exc:
-        return {'ok': False, 'error': str(exc), 'traduccion': texto}
+    except Exception:
+        cache.set('trad:caido', 1, 600)
+        log.warning('Falla del traductor', exc_info=True)
+        return {'ok': False, 'error': 'Traductor no disponible', 'traduccion': texto}
 
 
 # ── Usuarios (solo superusuario) ─────────────────────────────────────────────

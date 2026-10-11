@@ -2,9 +2,12 @@ from django.contrib.auth import views as auth_views
 from django.urls import path
 from tramites.api import api
 from tramites import views
+from tramites.usuarios import LoginForm
 
 urlpatterns = [
-    path('login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
+    path('login/', auth_views.LoginView.as_view(template_name='login.html', authentication_form=LoginForm,
+                                                redirect_authenticated_user=True), name='login'),
+    path('salud', views.salud, name='salud'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('cambiar-clave/', views.cambiar_clave, name='cambiar-clave'),
     path('', views.index, name='index'),
