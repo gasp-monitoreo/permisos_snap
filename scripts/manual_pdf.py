@@ -22,8 +22,7 @@ with sync_playwright() as p:
     pg.fill('#id_password', env['INITIAL_ADMIN_PASSWORD'])
     pg.click('.btn-submit')
     pg.wait_for_load_state('load')
-    pg.goto(f'{BASE}/manual/')
-    pg.click('#perfil-todo')                       # versión completa (todos los perfiles)
+    pg.goto(f'{BASE}/manual/?general=1')                # versión general: sin capítulo de administración
     pg.evaluate("document.querySelectorAll('img[loading]').forEach(i => i.loading = 'eager')")
     pg.wait_for_load_state('networkidle')
     pg.wait_for_function("[...document.images].every(i => i.complete)")

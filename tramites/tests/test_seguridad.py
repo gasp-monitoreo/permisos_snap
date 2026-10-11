@@ -208,3 +208,23 @@ def test_sin_recursos_de_cdn_externos():
 def test_csp_bloquea_scripts_de_otros_dominios():
     csp = Client().get('/login/')['Content-Security-Policy']
     assert "script-src 'self' 'unsafe-inline'" in csp and 'jsdelivr' not in csp and "object-src 'none'" in csp
+
+
+# ─── Manual personalizado ─────────────────────────────────────────────────────
+@pytest.mark.django_db
+def test_manual_sin_administracion_para_encargados():
+    enc = _usuario('enc@conaf.cl', region='Maule', solo_su_region=True, secciones=['portada', 'resumen_film'])
+    html = _cliente(enc).get('/manual/').content.decode()
+    assert 'Administrar usuarios' not in html and '/manual/img/' not in html
+    assert 'id="resumen"' in html and 'id="buscar"' not in html            # sin Búsqueda ni Exportar
+    assert 'Maule' in html and 'Filmación y Fotografía · Resumen' in html  # recuadro de su perfil
+    assert _cliente(enc).get('/manual/img/usuarios.jpg').status_code == 404
+
+
+@pytest.mark.django_db
+def test_manual_del_superusuario_incluye_administracion():
+    adm = _usuario('admin@conaf.cl', superusuario=True, secciones=[])
+    c = _cliente(adm)
+    assert 'Administrar usuarios' in c.get('/manual/').content.decode()
+    assert c.get('/manual/img/usuarios.jpg').status_code == 200
+    assert 'Administrar usuarios' not in c.get('/manual/?general=1').content.decode()   # base del PDF

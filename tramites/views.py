@@ -32,7 +32,23 @@ def index(request):
 
 @login_required
 def manual(request):
-    return render(request, 'manual.html')
+    """Manual adaptado al perfil de quien lo abre (?general=1: versión general, la del PDF)."""
+    from .manual import construir
+    from .usuarios import perfil_de
+    if request.GET.get('general'):
+        return HttpResponse(construir(general=True))
+    return HttpResponse(construir(request.user, perfil_de(request.user)))
+
+
+MANUAL_ADMIN_IMG = os.path.join(settings.BASE_DIR, 'docs', 'manual_admin')
+
+
+@login_required
+def manual_img_admin(request, archivo):
+    """Capturas del capítulo de administración: solo para el superusuario."""
+    if not request.user.is_superuser or archivo not in ('usuarios.jpg', 'usuario_editar.jpg', 'planilla.jpg'):
+        raise Http404(archivo)
+    return FileResponse(open(os.path.join(MANUAL_ADMIN_IMG, archivo), 'rb'), content_type='image/jpeg')
 
 
 MANUAL_PDF = os.path.join(settings.BASE_DIR, 'docs', 'manual_permisos_snap.pdf')
