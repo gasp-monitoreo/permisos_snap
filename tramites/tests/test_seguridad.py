@@ -188,3 +188,23 @@ def test_manual_pdf_requiere_sesion_y_se_descarga():
     r = _cliente(_usuario('ana@conaf.cl')).get('/manual/pdf')
     assert r.status_code == 200 and r['Content-Type'] == 'application/pdf'
     assert 'attachment' in r['Content-Disposition']
+
+
+# ─── Dependencias externas (cadena de suministro) ────────────────────────────
+CDN_PROHIBIDOS = ('jsdelivr', 'unpkg.com', 'cdnjs.cloudflare', 'fonts.googleapis', 'fonts.gstatic',
+                  'code.jquery', 'ajax.googleapis', 'cdn.tailwindcss')
+
+
+def test_sin_recursos_de_cdn_externos():
+    """Todo JS/CSS/fuente debe estar alojado localmente (requerimiento Cyber SOC SBAP)."""
+    from pathlib import Path
+    raiz = Path(__file__).resolve().parents[2]
+    archivos = [*raiz.glob('templates/*.html'), *raiz.glob('static/js/*.js'), *raiz.glob('static/css/*.css')]
+    hallazgos = [f'{a.name}: {c}' for a in archivos for c in CDN_PROHIBIDOS if c in a.read_text(encoding='utf-8')]
+    assert not hallazgos, hallazgos
+
+
+@pytest.mark.django_db
+def test_csp_bloquea_scripts_de_otros_dominios():
+    csp = Client().get('/login/')['Content-Security-Policy']
+    assert "script-src 'self' 'unsafe-inline'" in csp and 'jsdelivr' not in csp and "object-src 'none'" in csp

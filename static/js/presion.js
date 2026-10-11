@@ -23,10 +23,10 @@ function _cargarLeaflet() {
   _leafletListo = new Promise((ok, mal) => {
     const css = document.createElement('link');
     css.rel = 'stylesheet';
-    css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+    css.href = '/static/vendor/leaflet-1.9.4/leaflet.css';
     document.head.appendChild(css);
     const js = document.createElement('script');
-    js.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    js.src = '/static/vendor/leaflet-1.9.4/leaflet.js';
     js.onload = ok;
     js.onerror = () => mal(new Error('No se pudo cargar el mapa'));
     document.head.appendChild(js);

@@ -36,6 +36,8 @@ jobs:
           CSRF_TRUSTED_ORIGINS=https://permisos.monitoreo-snap.cl DJANGO_ALLOWED_HOSTS=permisos.monitoreo-snap.cl \
             SECRET_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(50))") \
             python manage.py check --deploy --fail-level WARNING
+      - name: Archivos estáticos (detecta referencias rotas)
+        run: python manage.py collectstatic --noinput
       - name: Migraciones al día
         run: python manage.py makemigrations --check --dry-run
       - name: Pruebas
