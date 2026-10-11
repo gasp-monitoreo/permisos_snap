@@ -180,7 +180,12 @@ function badgeHtml(estado, opts = {}) {
   const labels = { pendiente: 'Pendiente', completado: 'Completado', rechazado: 'Rechazado' };
   const badge = `<span class="badge ${cls}">${labels[estado] || escHtml(estado)}</span>`;
   if (opts.recepcionPendiente) {
-    return badge + `<span class="badge-nota-recepcion" title="CONAF aprobó — pendiente recepción formal por parte del solicitante">📬 Recepción solicitante</span>`;
+    return badge + `<span class="badge-nota-recepcion" title="CONAF resolvió — falta que el solicitante cierre el trámite en Cero Filas">📬 Falta cierre del solicitante</span>`;
+  }
+  const t = opts.tramite;
+  if (t && t.estado === 'pendiente') {
+    if (t.suspendido) return badge + `<span class="badge-nota-suspension" title="Solicitud en suspensión: no corre como atraso de CONAF">⏸ En suspensión</span>`;
+    if (tramiteEsperaSolicitante(t)) return badge + `<span class="badge-nota-recepcion" title="La etapa actual está en manos del solicitante: no es atraso de CONAF">✉️ Pendiente del solicitante</span>`;
   }
   return badge;
 }
@@ -213,8 +218,32 @@ function isProximaVencer(fecha, dias = 7) {
  * 2. La fecha_limite_proceso calculada en backend (fecha_inicio + plazo por tipo)
  * No aplica a trámites completados o rechazados.
  */
+const _esConaf = email => /@conaf\.(gob\.)?cl$/i.test((email || '').trim());
+
+/** Etapa abierta en manos del solicitante (subsanar, responder, cerrar): no es atraso de CONAF. */
+function tramiteEsperaSolicitante(t) {
+  if (t.estado !== 'pendiente') return false;
+  if (typeof t.espera_solicitante === 'boolean') return t.espera_solicitante;
+  const abiertas = (t.etapas || []).filter(e => e.estado === 'pendiente');
+  return (t.etapas_completadas || 0) > 0 && abiertas.length > 0 && abiertas.every(e => e.email && !_esConaf(e.email));
+}
+
+/**
+ * Situación de un trámite para gráficos y conteos:
+ *  completado · rechazado · cierre_solicitante (CONAF resolvió, el solicitante no ha cerrado)
+ *  · espera_solicitante (etapa en manos del solicitante) · suspendido · vencido (atraso CONAF) · al_dia
+ */
+function situacionTramite(t) {
+  if (t.estado === 'rechazado') return 'rechazado';
+  if (t.estado === 'completado') return t.recepcion_pendiente ? 'cierre_solicitante' : 'completado';
+  if (t.suspendido) return 'suspendido';
+  if (tramiteEsperaSolicitante(t)) return 'espera_solicitante';
+  return tramiteEsVencido(t) ? 'vencido' : 'al_dia';
+}
+
 function tramiteEsVencido(t) {
   if (t.estado === 'rechazado' || t.estado === 'completado') return false;
+  if (t.suspendido || tramiteEsperaSolicitante(t)) return false;   // no es atraso de CONAF
   if (t.etapa_actual && t.etapa_actual.fecha_vencimiento &&
       isVencida(t.etapa_actual.fecha_vencimiento)) return true;
   if (t.fecha_limite_proceso && isVencida(t.fecha_limite_proceso)) return true;
@@ -1578,7 +1607,8 @@ function renderTablaEntregadas(filtroTema) {
 
 function calcularDias(t) {
   const inicio = t.fecha_inicio;
-  const fin    = t.fecha_termino || t.fecha_modificacion;
+  // Hasta que CONAF resolvió (aunque el solicitante aún no cierre el trámite)
+  const fin    = t.fecha_resolucion || t.fecha_termino || t.fecha_modificacion;
   if (!inicio || !fin) return null;
   const ms = new Date(fin) - new Date(inicio);
   if (isNaN(ms) || ms <= 0) return null;
@@ -1665,7 +1695,7 @@ function renderTablaVencimientos() {
     return `
       <tr class="${clase}">
         <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
-        <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente })}</td>
+        <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente, tramite: t })}</td>
         <td>${tipoBadgeHtml(t)}</td>
         <td>${escHtml(t.nombre_solicitante || '–')}</td>
         <td>${regionMiniMapHtml(t)}</td>
@@ -1718,7 +1748,7 @@ function renderTablaRecientes() {
     return `
     <tr class="${rowClass}">
       <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
-      <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente })}</td>
+      <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente, tramite: t })}</td>
       <td>${tipoBadgeHtml(t)}</td>
       <td>${escHtml(t.nombre_solicitante || '–')}</td>
       <td>${regionMiniMapHtml(t)}</td>
@@ -2053,7 +2083,7 @@ function renderSearchResults(tramites, query, hint = '') {
     const mainRow = `
     <tr>
       <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
-      <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente })}</td>
+      <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente, tramite: t })}</td>
       <td>${tipoBadgeHtml(t)}</td>
       <td>${escHtml(nombreProceso(t.proceso_id).slice(0, 40))}</td>
       <td>${escHtml(t.nombre_solicitante || '–')}</td>
@@ -2585,7 +2615,7 @@ function renderModalBody(t) {
       <h3>Información General</h3>
       <div class="modal-kv">
         <div class="modal-kv-item"><span class="label">ID</span><span class="value fw-bold">#${t.id}</span></div>
-        <div class="modal-kv-item"><span class="label">Estado</span><span class="value">${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente })}</span></div>
+        <div class="modal-kv-item"><span class="label">Estado</span><span class="value">${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente, tramite: t })}</span></div>
         <div class="modal-kv-item"><span class="label">Proceso</span><span class="value">${escHtml(nombreProceso(t.proceso_id))}</span></div>
         <div class="modal-kv-item"><span class="label">Tipo</span><span class="value">${tipoBadgeHtml(t)}</span></div>
         <div class="modal-kv-item"><span class="label">Fecha Inicio</span><span class="value">${formatDateTime(t.fecha_inicio)}</span></div>

@@ -342,8 +342,11 @@ def normalize_tramite(t):
 
     if estado_final == 'pendiente' and completadas > 0:
         pendientes = [e for e in etapas_info if e.get('estado') == 'pendiente']
+        # Etapa devuelta al solicitante para subsanar o complementar: el trámite sigue en curso
+        _pat_subsanar = _re.compile(r'subsan|correg|observaci|complement|aclar|antecedente', _re.I)
+        devuelta = any(_pat_subsanar.search(ep.get('tarea_nombre') or '') for ep in pendientes)
         # a) La única etapa abierta es del solicitante: CONAF ya terminó, falta que lo abra.
-        if pendientes and all(not _email_es_conaf(ep.get('email')) for ep in pendientes):
+        if pendientes and not devuelta and all(not _email_es_conaf(ep.get('email')) for ep in pendientes):
             recepcion_pendiente = True
             estado_final = 'completado'
         # b) Todas las etapas están completadas pero CeroFilas sigue marcando "pendiente":
@@ -351,6 +354,28 @@ def normalize_tramite(t):
         elif not pendientes and completadas == total_etapas:
             recepcion_pendiente = not _email_es_conaf(etapas_info[-1].get('email'))
             estado_final = 'completado'
+
+    # Fecha en que CONAF terminó su parte: el último término de una etapa CONAF. Si el
+    # solicitante no ha cerrado el trámite, el tiempo de resolución se cuenta hasta esa fecha.
+    fechas_conaf = [e.get('fecha_termino') for e in etapas_info
+                    if e.get('estado') == 'completado' and e.get('fecha_termino') and _email_es_conaf(e.get('email'))]
+    fecha_resolucion = max(fechas_conaf, key=str) if (recepcion_pendiente and fechas_conaf) else t.get('fecha_termino')
+
+    # Trámite en curso cuya etapa abierta está en manos del solicitante (p. ej. subsanar):
+    # no es atraso de CONAF.
+    abiertas = [e for e in etapas_info if e.get('estado') == 'pendiente']
+    espera_solicitante = (estado_final == 'pendiente' and completadas > 0 and bool(abiertas)
+                          and all(e.get('email') and not _email_es_conaf(e.get('email')) for e in abiertas))
+
+    # Suspensión: estado o etapa de Cero Filas, o campo del formulario que la registra.
+    _pat_susp = _re.compile(r'suspen', _re.I)
+    _si = {'si', 'sí', 'true', '1', 'yes', 'suspendido', 'suspendida'}
+    suspendido = estado_final == 'pendiente' and (
+        bool(_pat_susp.search(str(t.get('estado') or '')))
+        or any(_pat_susp.search(str(e.get('estado') or '')) for e in etapas_info)
+        or any(_pat_susp.search(e.get('tarea_nombre') or '') for e in abiertas)
+        or any(_pat_susp.search(k) and str(v).strip().lower() in _si for k, v in datos.items())
+    )
 
     proceso_id_val = t.get('proceso_id')
     fecha_limite_proceso = None
@@ -389,6 +414,9 @@ def normalize_tramite(t):
         'etapas_completadas':  completadas,
         'borrador':            borrador,
         'recepcion_pendiente': recepcion_pendiente,
+        'espera_solicitante':  espera_solicitante,
+        'suspendido':          suspendido,
+        'fecha_resolucion':    fecha_resolucion,
         'motivo_rechazo':      str(motivo_rechazo).strip()[:1000],
         'areas_protegidas':    areas_protegidas,
         'archivo_autorizacion': (
