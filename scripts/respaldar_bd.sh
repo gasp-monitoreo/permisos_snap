@@ -6,9 +6,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 DESTINO=${RESPALDOS_DIR:-/var/backups/permisos_snap}
 mkdir -p "$DESTINO" && chmod 700 "$DESTINO"
-# misma URL que usa la app (config/settings.py): DATABASE_URL de .env.prod o la de por defecto
-URL=$(grep -E '^DATABASE_URL=' .env.prod | cut -d= -f2- || true)
-URL=${URL:-postgresql://cerofilas:cerofilas_secret@localhost:5432/cerofilas}
+# misma URL que usa la app: la toma del contenedor en marcha (o de .env.prod)
+APP=$(docker ps --format '{{.Names}}' | grep -E 'permisos.*app' | head -1 || true)
+URL=""
+[ -n "$APP" ] && URL=$(docker inspect "$APP" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^DATABASE_URL=//p')
+[ -z "$URL" ] && URL=$(sed -n 's/^[[:space:]]*\(export \)\?DATABASE_URL=//p' .env.prod | tr -d "\"'" | head -1)
+[ -z "$URL" ] && { echo "No se encontró DATABASE_URL"; exit 1; }
 ARCHIVO="$DESTINO/permisos_$(date +%Y%m%d-%H%M%S).sql.gz"
 # pg_dump de la misma versión mayor que el servidor, desde un contenedor temporal
 VERSION=$(docker run --rm --network host postgres:16-alpine psql "$URL" -tAc 'SHOW server_version_num' | cut -c1-2)
