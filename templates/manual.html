@@ -1,0 +1,685 @@
+{% verbatim %}<title>Manual Permisos SNAP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display&family=Poppins:wght@800&display=swap">
+<style>
+/* Layout: índice fijo a la izquierda + columna de lectura; capturas más anchas que el texto, con marcas numeradas */
+:root {
+  --bosque: #013722;      /* verde oscuro del logo: títulos, índice */
+  --hoja: #347A17;        /* verde "SNAP": acentos, pasos */
+  --azul: #0155A0;        /* filmación, enlaces de datos */
+  --ocre: #B97E16;        /* avisos importantes (texto) */
+  --ocre-suave: #FBF1DC;
+  --hoja-suave: #EEF6E7;
+  --azul-suave: #E6EFF8;
+  --fondo: #F7F6F1;
+  --papel: #FFFFFF;
+  --tinta: #13241A;
+  --tinta-2: #4E5C52;
+  --linea: #E3E1D6;
+  --sombra: 0 10px 30px rgba(20, 40, 25, .10), 0 2px 6px rgba(20, 40, 25, .06);
+  --serif: 'DM Serif Display', Georgia, serif;
+  --sans: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+  --marca: 'Poppins', 'DM Sans', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bosque: #CDE8C4; --hoja: #8CC26B; --azul: #8DBDF0; --ocre: #E8B860; --ocre-suave: #3A2E14;
+    --hoja-suave: #1C2E1E; --azul-suave: #16263A; --fondo: #0F1712; --papel: #17221A; --tinta: #E7EEE8;
+    --tinta-2: #A7B6AB; --linea: #2B3A2F; --sombra: 0 10px 30px rgba(0,0,0,.4); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bosque: #CDE8C4; --hoja: #8CC26B; --azul: #8DBDF0; --ocre: #E8B860; --ocre-suave: #3A2E14;
+  --hoja-suave: #1C2E1E; --azul-suave: #16263A; --fondo: #0F1712; --papel: #17221A; --tinta: #E7EEE8;
+  --tinta-2: #A7B6AB; --linea: #2B3A2F; --sombra: 0 10px 30px rgba(0,0,0,.4); color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--fondo); color: var(--tinta); font: 17px/1.65 var(--sans); margin: 0; }
+a { color: var(--azul); }
+:focus-visible { outline: 3px solid var(--hoja); outline-offset: 2px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+html { scroll-behavior: smooth; }
+
+.marco { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 48px; max-width: 1320px; margin: 0 auto; padding-inline: 28px; }
+
+/* Índice */
+.indice { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; height: 100vh; overflow-y: auto; padding-block: 28px; }
+.indice-marca { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+.indice-marca img { width: 46px; height: 46px; }
+.indice-marca b { font: 800 19px/1 var(--marca); color: var(--bosque); }
+.indice-marca b span { display: block; color: var(--hoja); }
+.indice ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; counter-reset: cap; }
+.indice li a { display: grid; grid-template-columns: 28px 1fr; align-items: baseline; text-decoration: none; color: var(--tinta-2);
+  font-size: 14.5px; padding: 6px 10px; border-radius: 8px; line-height: 1.35; }
+.indice li a::before { counter-increment: cap; content: counter(cap); font: 600 12px var(--sans); color: var(--hoja); font-variant-numeric: tabular-nums; }
+.indice li a:hover { background: var(--hoja-suave); color: var(--tinta); }
+.indice li.solo-admin a::after { content: 'admin'; grid-column: 2; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--azul); }
+
+/* Selector de perfil */
+.perfil-elige { background: var(--papel); border: 1px solid var(--linea); border-radius: 14px; padding: 14px; margin-bottom: 20px; }
+.perfil-elige p { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--tinta-2); }
+.perfil-elige div { display: flex; flex-direction: column; gap: 6px; }
+.perfil-elige button { text-align: left; font: 500 14px var(--sans); color: var(--tinta); background: transparent; border: 1px solid var(--linea);
+  border-radius: 9px; padding: 8px 11px; cursor: pointer; }
+.perfil-elige button[aria-pressed="true"] { background: var(--bosque); color: var(--papel); border-color: var(--bosque); }
+body[data-perfil="encargado"] .solo-admin { display: none; }
+
+/* Contenido */
+main { padding-block: 28px 80px; min-width: 0; }
+.cabecera { position: relative; border-radius: 22px; overflow: hidden; background: #013722; color: #fff; padding: 48px 48px 44px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 28px; align-items: center; isolation: isolate; }
+.cabecera::before { content: ''; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(90deg, rgba(1,38,26,.96) 0%, rgba(1,38,26,.82) 55%, rgba(1,38,26,.35) 100%), url("img/portada_hero.jpg") center/cover; }
+.cabecera small { font-size: 12.5px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: #CDE4BC; }
+.cabecera h1 { font: 400 clamp(36px, 5vw, 56px)/1.05 var(--serif); margin: 10px 0 14px; text-wrap: balance; }
+.cabecera p { margin: 0; max-width: 56ch; color: #E4EEE0; font-size: 18px; }
+.cabecera img { width: 170px; background: #fff; border-radius: 20px; padding: 14px; }
+.dato-version { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.dato-version span { border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.08); border-radius: 99px; padding: 4px 12px; font-size: 13.5px; }
+
+section.capitulo { margin-top: 64px; scroll-margin-top: 24px; }
+.capitulo > header { display: flex; align-items: baseline; gap: 14px; border-bottom: 2px solid var(--linea); padding-bottom: 10px; margin-bottom: 22px; }
+.capitulo > header .num { font: 800 15px var(--marca); color: var(--papel); background: var(--hoja); border-radius: 9px; min-width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; transform: translateY(-3px); }
+h2 { font: 400 34px/1.15 var(--serif); color: var(--bosque); margin: 0; text-wrap: balance; }
+h3 { font: 700 20px/1.3 var(--sans); color: var(--bosque); margin: 34px 0 10px; text-wrap: balance; }
+.texto { max-width: 68ch; }
+.texto p { margin: 0 0 14px; }
+.lead { font-size: 19px; color: var(--tinta-2); }
+.etiqueta-admin { display: inline-block; font: 700 11.5px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--azul);
+  background: var(--azul-suave); border-radius: 6px; padding: 3px 8px; margin-left: auto; align-self: center; }
+kbd, .boton { display: inline-block; font: 600 14px var(--sans); background: var(--papel); border: 1px solid var(--linea); border-bottom-width: 3px;
+  border-radius: 7px; padding: 0 8px; color: var(--tinta); white-space: nowrap; }
+.boton.verde { background: #013722; color: #fff; border-color: #001d12; }
+
+/* Pasos (secuencias reales) */
+ol.pasos { list-style: none; counter-reset: paso; padding: 0; margin: 14px 0 0; display: flex; flex-direction: column; gap: 12px; max-width: 68ch; }
+ol.pasos > li { counter-increment: paso; display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: start; background: var(--papel);
+  border: 1px solid var(--linea); border-radius: 14px; padding: 14px 18px 14px 14px; }
+ol.pasos > li::before { content: counter(paso); width: 34px; height: 34px; border-radius: 50%; background: var(--hoja-suave); color: var(--hoja);
+  font: 800 16px/34px var(--marca); text-align: center; }
+ol.pasos > li strong { color: var(--bosque); }
+
+/* Avisos */
+.aviso { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; border-radius: 14px; padding: 14px 18px; margin: 18px 0; max-width: 68ch; }
+.aviso svg { width: 24px; height: 24px; margin-top: 2px; }
+.aviso p { margin: 0; }
+.aviso b { display: block; margin-bottom: 2px; }
+.aviso.consejo { background: var(--hoja-suave); color: var(--tinta); }
+.aviso.consejo svg { color: var(--hoja); }
+.aviso.importante { background: var(--ocre-suave); }
+.aviso.importante svg, .aviso.importante b { color: var(--ocre); }
+
+/* Capturas con marcas numeradas */
+figure { margin: 22px 0; }
+.captura { position: relative; border-radius: 14px; overflow: hidden; box-shadow: var(--sombra); border: 1px solid var(--linea); background: var(--papel); max-width: 100%; }
+.captura img { display: block; width: 100%; height: auto; }
+.captura.angosta { max-width: 620px; }
+.captura.media { max-width: 820px; }
+.marca { position: absolute; transform: translate(-50%, -50%); width: 30px; height: 30px; border-radius: 50%; background: #D9A13B; color: #1b1300;
+  font: 800 14px/30px var(--marca); text-align: center; box-shadow: 0 0 0 3px #fff, 0 3px 10px rgba(0,0,0,.35); }
+figcaption { font-size: 14px; color: var(--tinta-2); margin-top: 10px; max-width: 68ch; }
+.leyenda { list-style: none; padding: 0; margin: 16px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px 22px; }
+.leyenda li { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; font-size: 15.5px; }
+.leyenda li::before { content: attr(data-n); width: 26px; height: 26px; border-radius: 50%; background: #D9A13B; color: #1b1300; font: 800 13px/26px var(--marca); text-align: center; }
+.dupla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; align-items: start; }
+.trio-celular { display: grid; grid-template-columns: 220px 220px minmax(0, 1fr); gap: 22px; align-items: start; }
+.trio-celular .captura { border-radius: 26px; }
+
+/* Lectura de gráficos */
+.grafico-explica { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 26px; align-items: start; margin: 22px 0; }
+.grafico-explica .texto p:last-child { margin-bottom: 0; }
+
+/* Tabla de perfiles */
+.tabla-scroll { overflow-x: auto; border-radius: 14px; border: 1px solid var(--linea); background: var(--papel); margin-top: 18px; }
+table.perfiles { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 15px; }
+.perfiles th, .perfiles td { padding: 11px 14px; border-bottom: 1px solid var(--linea); text-align: left; vertical-align: top; }
+.perfiles thead th { background: #013722; color: #fff; font-weight: 600; font-size: 14px; }
+.perfiles thead th small { display: block; font-weight: 400; color: #CDE4BC; font-size: 12px; }
+.perfiles tbody th { font-weight: 600; color: var(--tinta); width: 34%; }
+.perfiles tbody th small { display: block; color: var(--tinta-2); font-weight: 400; font-size: 13px; }
+.perfiles tr.grupo th { background: var(--hoja-suave); color: var(--bosque); font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; }
+.si, .no, .op { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.si { color: var(--hoja); }
+.no { color: var(--tinta-2); font-weight: 500; }
+.op { color: var(--ocre); }
+.si::before { content: '●'; } .no::before { content: '○'; } .op::before { content: '◐'; }
+.simbolos { display: flex; flex-wrap: wrap; gap: 18px; font-size: 14px; color: var(--tinta-2); margin-top: 12px; }
+
+/* Preguntas frecuentes */
+details { background: var(--papel); border: 1px solid var(--linea); border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; max-width: 76ch; }
+details summary { cursor: pointer; font-weight: 700; color: var(--bosque); }
+details p { margin: 10px 0 0; }
+dl.glosario { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 10px 22px; max-width: 80ch; margin: 0; }
+dl.glosario dt { font-weight: 700; color: var(--bosque); }
+dl.glosario dd { margin: 0; }
+.direccion { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--papel); border: 1px solid var(--linea); border-radius: 12px; padding: 8px 8px 8px 16px; font-weight: 700; font-size: 18px; }
+.direccion button { font: 600 14px var(--sans); background: var(--bosque); color: var(--papel); border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+.pie { margin-top: 80px; padding-top: 18px; border-top: 1px solid var(--linea); font-size: 14px; color: var(--tinta-2); }
+
+@media (max-width: 1000px) {
+  .marco { grid-template-columns: 1fr; gap: 0; padding-inline: 16px; }
+  .indice { position: static; height: auto; padding-block: 18px 0; }
+  .indice nav { display: none; }
+  .perfil-elige div { flex-direction: row; flex-wrap: wrap; }
+  .grafico-explica, .dupla { grid-template-columns: 1fr; }
+  .trio-celular { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .trio-celular .texto { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .cabecera { grid-template-columns: 1fr; padding: 30px 22px; }
+  .cabecera img { width: 120px; }
+  h2 { font-size: 28px; }
+  .marca { width: 22px; height: 22px; font-size: 11px; line-height: 22px; }
+  dl.glosario { grid-template-columns: 1fr; gap: 2px; }
+  dl.glosario dd { margin-bottom: 10px; }
+}
+</style>
+
+<div class="marco">
+  <aside class="indice" aria-label="Índice del manual">
+    <div class="indice-marca"><img src="/static/manual/emblema.png" alt=""><b>Permisos<span>SNAP</span></b></div>
+    <div class="perfil-elige" role="group" aria-labelledby="perfil-titulo">
+      <p id="perfil-titulo">¿Qué perfil tiene?</p>
+      <div>
+        <button type="button" id="perfil-encargado" data-perfil="encargado" aria-pressed="false">Encargado/a regional</button>
+        <button type="button" id="perfil-todo" data-perfil="todo" aria-pressed="true">Administrador/a (ver todo)</button>
+      </div>
+    </div>
+    <nav>
+      <ol>
+        <li><a href="#que-es">Qué es Permisos SNAP</a></li>
+        <li><a href="#antes">Antes de empezar</a></li>
+        <li><a href="#ingresar">Ingresar por primera vez</a></li>
+        <li><a href="#olvide">Si olvida su clave</a></li>
+        <li><a href="#pantalla">Conocer la pantalla</a></li>
+        <li><a href="#portada">La Portada</a></li>
+        <li><a href="#resumen">El Resumen de su sección</a></li>
+        <li><a href="#areas">Áreas protegidas y mapa</a></li>
+        <li><a href="#detalle">Ver el detalle de un trámite</a></li>
+        <li><a href="#buscar">Buscar y exportar</a></li>
+        <li><a href="#perfiles">Perfiles y permisos</a></li>
+        <li class="solo-admin"><a href="#administrar">Administrar usuarios</a></li>
+        <li><a href="#preguntas">Preguntas frecuentes</a></li>
+        <li><a href="#glosario">Glosario</a></li>
+      </ol>
+    </nav>
+  </aside>
+
+  <main>
+    <header class="cabecera">
+      <div>
+        <small>Manual de uso · Gerencia de Áreas Protegidas · CONAF</small>
+        <h1>Cómo usar Permisos SNAP</h1>
+        <p>Guía paso a paso para encargados y encargadas regionales de investigación y de filmación y fotografía. No necesita conocimientos técnicos: si sabe usar el correo, puede usar la plataforma.</p>
+        <div class="dato-version"><span>Versión octubre 2026</span><span>Computador y celular</span><span>Lectura: 20 minutos</span></div>
+      </div>
+      <img src="/static/manual/logo.png" alt="Logo Permisos SNAP">
+    </header>
+
+    <!-- 1 -->
+    <section class="capitulo" id="que-es">
+      <header><span class="num">1</span><h2>Qué es Permisos SNAP</h2></header>
+      <div class="texto">
+        <p class="lead">Permisos SNAP reúne en un solo lugar los permisos de investigación y de filmación y fotografía que se tramitan en CeroFilas para las áreas protegidas del país.</p>
+        <p>Con la plataforma puede:</p>
+        <ul>
+          <li>Ver cuántas solicitudes hay en su región, en qué estado están y cuáles tienen el plazo vencido.</li>
+          <li>Saber qué áreas protegidas tienen más permisos activos hoy y dónde se están haciendo las actividades.</li>
+          <li>Revisar el detalle de cada trámite: fechas, etapas, avance y motivo de rechazo cuando corresponde.</li>
+        </ul>
+        <p>Los datos vienen de CeroFilas y se actualizan solos. La plataforma <strong>no modifica nada en CeroFilas</strong>: las solicitudes se siguen aprobando o rechazando allá, como siempre.</p>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="capitulo" id="antes">
+      <header><span class="num">2</span><h2>Antes de empezar</h2></header>
+      <div class="texto">
+        <p>Necesita tres cosas:</p>
+        <ol class="pasos">
+          <li><div><strong>Un computador o celular con internet.</strong> Funciona mejor con Google Chrome o Microsoft Edge actualizados.</div></li>
+          <li><div><strong>Su correo institucional</strong> (por ejemplo, nombre.apellido@conaf.cl). Es su nombre de usuario.</div></li>
+          <li><div><strong>Una clave temporal</strong> que le entrega el administrador de la plataforma. Solo sirve para el primer ingreso.</div></li>
+        </ol>
+        <h3>La dirección de la plataforma</h3>
+        <p>Escríbala en la barra de direcciones del navegador o guárdela en favoritos:</p>
+        <div class="direccion"><span id="url">permisos.monitoreo-snap.cl</span><button type="button" id="copiar-url">Copiar</button></div>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="capitulo" id="ingresar">
+      <header><span class="num">3</span><h2>Ingresar por primera vez</h2></header>
+      <figure>
+        <div class="captura media">
+          <img src="/static/manual/login.jpg" alt="Pantalla de inicio de sesión de Permisos SNAP" loading="lazy">
+          <span class="marca" style="left:63%;top:58.8%">1</span>
+          <span class="marca" style="left:63%;top:69.8%">2</span>
+          <span class="marca" style="left:63%;top:79%">3</span>
+        </div>
+      </figure>
+      <ol class="pasos">
+        <li><div>En <strong>Correo electrónico</strong> escriba su correo institucional completo. Da lo mismo si usa mayúsculas o minúsculas.</div></li>
+        <li><div>En <strong>Contraseña</strong> escriba la clave temporal que le entregaron, tal como aparece (aquí sí importan las mayúsculas).</div></li>
+        <li><div>Haga clic en <span class="boton verde">Iniciar sesión</span>.</div></li>
+      </ol>
+
+      <h3>Elija su propia clave</h3>
+      <div class="dupla">
+        <figure>
+          <div class="captura">
+            <img src="/static/manual/cambiar_clave.jpg" alt="Pantalla para definir una clave propia" loading="lazy">
+            <span class="marca" style="left:37%;top:52.3%">1</span>
+            <span class="marca" style="left:37%;top:62.2%">2</span>
+            <span class="marca" style="left:37%;top:74.5%">3</span>
+            <span class="marca" style="left:37%;top:82.7%">4</span>
+          </div>
+        </figure>
+        <div class="texto">
+          <p>La primera vez, la plataforma le pide cambiar la clave temporal por una suya. No podrá ver nada hasta hacerlo.</p>
+          <ol class="pasos">
+            <li><div>Escriba otra vez la <strong>clave temporal</strong>.</div></li>
+            <li><div>Escriba su <strong>nueva clave</strong>: al menos 8 caracteres.</div></li>
+            <li><div>Repítala para confirmar.</div></li>
+            <li><div>Haga clic en <span class="boton verde">Guardar clave</span>. Entrará directo a la plataforma.</div></li>
+          </ol>
+        </div>
+      </div>
+      <div class="aviso consejo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+        <p><b>Una buena clave</b>Use una frase corta que recuerde, con alguna mayúscula y un número, por ejemplo <em>Lenga2026Sur</em>. No use la misma clave de su correo y no la anote en lugares visibles.</p>
+      </div>
+      <p class="texto">Para cambiar la clave más adelante, haga clic en <strong>Mi clave</strong>, abajo en el menú lateral, o en su nombre arriba a la derecha.</p>
+    </section>
+
+    <!-- 4 -->
+    <section class="capitulo" id="olvide">
+      <header><span class="num">4</span><h2>Si olvida su clave</h2></header>
+      <div class="texto">
+        <p>Nadie puede ver su clave, ni siquiera el administrador. Si la olvida:</p>
+        <ol class="pasos">
+          <li><div>Pida al administrador de la plataforma que <strong>restablezca su clave</strong>.</div></li>
+          <li><div>Recibirá una <strong>nueva clave temporal</strong>.</div></li>
+          <li><div>Ingrese con ella y elija una clave nueva, igual que la primera vez (capítulo 3).</div></li>
+        </ol>
+        <div class="aviso importante">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+          <p><b>La clave temporal caduca</b>Si no la usa a tiempo, puede dejar de funcionar porque el administrador generó una nueva. Úsela apenas la reciba; si no funciona, pida otra.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="capitulo" id="pantalla">
+      <header><span class="num">5</span><h2>Conocer la pantalla</h2></header>
+      <p class="texto lead">Todas las secciones tienen la misma estructura: un menú a la izquierda y el contenido a la derecha.</p>
+      <figure>
+        <div class="captura">
+          <img src="/static/manual/pantalla.jpg" alt="Pantalla principal con menú lateral, barra superior y resumen de la región" loading="lazy">
+          <span class="marca" style="left:3%;top:30%">1</span>
+          <span class="marca" style="left:20.8%;top:12.4%">2</span>
+          <span class="marca" style="left:22.7%;top:4.2%">3</span>
+          <span class="marca" style="left:72.6%;top:4.2%">4</span>
+          <span class="marca" style="left:86.7%;top:9.7%">5</span>
+          <span class="marca" style="left:3%;top:90.5%">6</span>
+          <span class="marca" style="left:23.6%;top:65.6%">7</span>
+          <span class="marca" style="left:23.6%;top:47%">8</span>
+        </div>
+        <ul class="leyenda">
+          <li data-n="1"><span><strong>Menú.</strong> Haga clic en una sección para abrirla. Solo verá las secciones que su perfil permite.</span></li>
+          <li data-n="2"><span><strong>Contraer el menú.</strong> Lo deja solo con íconos para ganar espacio. Vuelva a hacer clic para abrirlo.</span></li>
+          <li data-n="3"><span><strong>Nombre de la sección</strong> en la que está.</span></li>
+          <li data-n="4"><span><strong>Años.</strong> Elija desde qué año y hasta qué año quiere ver trámites.</span></li>
+          <li data-n="5"><span><strong>Actualizar.</strong> Aplica los años elegidos o recarga los datos.</span></li>
+          <li data-n="6"><span><strong>Mi clave y Cerrar sesión.</strong> Cierre sesión si usa un computador compartido.</span></li>
+          <li data-n="7"><span><strong>Su región.</strong> Si su perfil es regional, aquí se indica que solo ve su región.</span></li>
+          <li data-n="8"><span><strong>Cifras principales:</strong> total de trámites, pendientes, completados, rechazados y con plazo vencido.</span></li>
+        </ul>
+      </figure>
+
+      <h3>En el celular</h3>
+      <div class="trio-celular">
+        <div class="captura"><img src="/static/manual/celular.jpg" alt="Plataforma vista en un celular" loading="lazy"></div>
+        <div class="captura"><img src="/static/manual/celular_menu.jpg" alt="Menú abierto en el celular" loading="lazy"></div>
+        <div class="texto">
+          <p>En el celular el menú se esconde para dejar espacio al contenido.</p>
+          <ol class="pasos">
+            <li><div>Toque el ícono <kbd>☰</kbd> arriba a la izquierda para abrir el menú.</div></li>
+            <li><div>Toque la sección que quiere ver. El menú se cierra solo.</div></li>
+          </ol>
+          <p>Algunas tablas y gráficos se desplazan hacia el lado: deslice con el dedo para ver el resto.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="capitulo" id="portada">
+      <header><span class="num">6</span><h2>La Portada</h2></header>
+      <p class="texto lead">La Portada muestra el panorama histórico: cuántos permisos se han otorgado, dónde y sobre qué temas. Es lo primero que ve al ingresar.</p>
+      <figure><div class="captura"><img src="/static/manual/portada_kpis.jpg" alt="Cifras clave de la portada" loading="lazy"></div>
+        <figcaption>Cifras clave. La línea pequeña de cada cifra muestra cómo ha cambiado año a año.</figcaption></figure>
+      <figure><div class="captura"><img src="/static/manual/portada_anios.jpg" alt="Permisos por año y por región" loading="lazy"></div>
+        <figcaption>A la izquierda, permisos por año (verde: investigación; azul: filmación y fotografía). A la derecha, Chile de norte a sur: cada barra es una región.</figcaption></figure>
+      <div class="grafico-explica">
+        <div class="captura"><img src="/static/manual/portada_temas.jpg" alt="Mapa de calor de temáticas por año" loading="lazy"></div>
+        <div class="texto">
+          <h3 style="margin-top:0">Cómo leer el mapa de calor</h3>
+          <p>Cada fila es un tema de investigación y cada columna un año. <strong>Mientras más oscuro el cuadro, más permisos</strong> hubo ese año sobre ese tema.</p>
+          <p>Las flechas junto al nombre indican si el tema creció <span style="color:var(--hoja)">▲</span> o bajó <span style="color:#B9412F">▼</span> en los dos últimos años.</p>
+          <p>Más abajo está la tabla <strong>Investigaciones con archivos entregados</strong>: los informes que ya entregaron los investigadores.</p>
+        </div>
+      </div>
+      <div class="aviso consejo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+        <p><b>Pase el mouse sobre cualquier barra o cuadro</b>Aparece un recuadro con el número exacto. Y el botón <span class="boton">Ver tabla</span> de cada gráfico muestra los mismos datos como tabla.</p>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="capitulo" id="resumen">
+      <header><span class="num">7</span><h2>El Resumen de su sección</h2></header>
+      <p class="texto lead">El Resumen es el panel de trabajo diario. Hay uno para <strong>Investigación</strong> y otro para <strong>Filmación y Fotografía</strong>; cada uno muestra solo los trámites de ese tipo.</p>
+      <figure><div class="captura"><img src="/static/manual/resumen_estado.jpg" alt="Barra de estado de las solicitudes" loading="lazy"></div>
+        <figcaption><strong>Estado de las solicitudes.</strong> Verde: completadas. Amarillo: en trámite y al día. Rojo: en trámite con el plazo vencido. Morado: rechazadas.</figcaption></figure>
+      <figure><div class="captura"><img src="/static/manual/resumen_graficos.jpg" alt="Ingresos por mes y tiempo de resolución" loading="lazy"></div>
+        <figcaption><strong>Ingresos por mes</strong>: cuántas solicitudes llegaron cada mes. <strong>Tiempo de resolución</strong>: cuántos días tardan en resolverse; la «mediana» es el tiempo típico.</figcaption></figure>
+      <figure><div class="captura"><img src="/static/manual/resumen_pendientes.jpg" alt="Pendientes por oficina regional y regiones" loading="lazy"></div>
+        <figcaption><strong>Pendientes por oficina regional</strong>: qué oficina tiene solicitudes esperando y cuántos días lleva la más antigua. <strong>Regiones de norte a sur</strong>: volumen, pendientes, vencidas y días de resolución por región.</figcaption></figure>
+      <div class="texto">
+        <h3>Las tablas de abajo</h3>
+        <ul>
+          <li><strong>Etapas con vencimiento próximo:</strong> trámites cuyo plazo vence en los próximos 7 días o ya venció. Revíselas primero.</li>
+          <li><strong>Trámites recientes:</strong> lo que ingresó en los últimos 3 meses.</li>
+          <li><strong>Posibles duplicados regionales:</strong> la misma persona pidió el mismo proyecto en varias regiones.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section class="capitulo" id="areas">
+      <header><span class="num">8</span><h2>Áreas protegidas y mapa</h2></header>
+      <div class="texto">
+        <h3 style="margin-top:0">Filtrar por región</h3>
+        <p>Si su perfil es nacional, verá botones con las 16 regiones. Al elegir una, todo el Resumen muestra solo esa región. Para volver a ver todas, haga clic en <span class="boton">Todas</span>.</p>
+      </div>
+      <figure><div class="captura"><img src="/static/manual/filtro_regiones.jpg" alt="Botones de las 16 regiones" loading="lazy"></div></figure>
+      <div class="aviso consejo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+        <p><b>Encargados regionales</b>Si su perfil es de una región, no verá estos botones: la plataforma ya muestra solo su región.</p>
+      </div>
+
+      <h3>Presión sobre áreas protegidas</h3>
+      <div class="grafico-explica">
+        <div class="captura"><img src="/static/manual/presion_lista.jpg" alt="Lista de áreas protegidas con permisos activos" loading="lazy"></div>
+        <div class="texto">
+          <p>Con una región elegida aparece la lista de sus áreas protegidas, ordenadas por cuántos permisos tienen <strong>activos hoy</strong>:</p>
+          <ul>
+            <li><strong>En ejecución hoy:</strong> la fecha de hoy está dentro del período de actividades.</li>
+            <li><strong>Programados:</strong> aprobados, pero aún no empiezan.</li>
+            <li><strong>En evaluación:</strong> todavía en revisión.</li>
+          </ul>
+          <p>Así sabe qué áreas tienen más gente trabajando en terreno.</p>
+        </div>
+      </div>
+
+      <h3>El mapa de un área</h3>
+      <p class="texto">Haga clic en el nombre de un área para abrir su mapa.</p>
+      <figure>
+        <div class="captura">
+          <img src="/static/manual/mapa.jpg" alt="Mapa de la Reserva Nacional Altos de Lircay con el límite del área y un punto de investigación" loading="lazy">
+          <span class="marca" style="left:3%;top:4.5%">1</span>
+          <span class="marca" style="left:93.4%;top:15%">2</span>
+          <span class="marca" style="left:6%;top:16.4%">3</span>
+          <span class="marca" style="left:34%;top:26%">4</span>
+          <span class="marca" style="left:93.6%;top:4.5%">5</span>
+        </div>
+        <ul class="leyenda">
+          <li data-n="1"><span><strong>Área y conteo:</strong> cuántos permisos tienen coordenadas dentro del área.</span></li>
+          <li data-n="2"><span><strong>Capas:</strong> cambie entre mapa topográfico y foto satelital.</span></li>
+          <li data-n="3"><span><strong>Acercar y alejar</strong> (también con la rueda del mouse o con dos dedos).</span></li>
+          <li data-n="4"><span><strong>Haga clic en un punto</strong> para ver el permiso y abrir su detalle.</span></li>
+          <li data-n="5"><span><strong>Cerrar</strong> el mapa.</span></li>
+        </ul>
+      </figure>
+      <div class="aviso importante">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <p><b>Solo aparecen los permisos con coordenadas</b>Los puntos son las coordenadas que el solicitante escribió en el formulario, y solo se muestran si caen dentro del límite oficial del área (línea verde). Muchos formularios no traen coordenadas: esos permisos se cuentan en la lista, pero no aparecen en el mapa.</p>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section class="capitulo" id="detalle">
+      <header><span class="num">9</span><h2>Ver el detalle de un trámite</h2></header>
+      <div class="dupla">
+        <div class="captura"><img src="/static/manual/detalle_tramite.jpg" alt="Ventana con el detalle de un trámite (datos personales difuminados)" loading="lazy"></div>
+        <div class="texto">
+          <p>Haga clic en el número de un trámite (por ejemplo <span class="boton verde">#37856800</span>) en cualquier tabla, o en «Ver detalle del trámite» en el mapa.</p>
+          <p>Se abre una ventana con:</p>
+          <ul>
+            <li>Estado, proceso, fechas y región.</li>
+            <li>Datos del solicitante y del proyecto.</li>
+            <li>El <strong>motivo del rechazo</strong>, si CONAF lo rechazó.</li>
+            <li>El avance y cada etapa: quién la tiene y desde cuándo.</li>
+          </ul>
+          <p>Para cerrarla, haga clic en <kbd>✕</kbd> arriba a la derecha.</p>
+          <div class="aviso consejo" style="margin-top:4px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+            <p><b>«Recepción pendiente»</b>Significa que CONAF ya terminó y el trámite volvió al solicitante, pero él todavía no lo abre. Para la plataforma es un trámite finalizado.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section class="capitulo" id="buscar">
+      <header><span class="num">10</span><h2>Buscar y exportar</h2></header>
+      <div class="dupla">
+        <div>
+          <div class="captura"><img src="/static/manual/busqueda.jpg" alt="Sección Búsqueda" loading="lazy"></div>
+        </div>
+        <div class="texto">
+          <h3 style="margin-top:0">Búsqueda</h3>
+          <p>Escriba un número de trámite, un nombre, un correo o el nombre de un área protegida y presione <kbd>Enter</kbd> o haga clic en <span class="boton verde">Buscar</span>.</p>
+          <p>Para buscar por área basta con parte del nombre: «Lircay» encuentra «Reserva Nacional Altos de Lircay».</p>
+        </div>
+      </div>
+      <div class="dupla" style="margin-top:22px">
+        <div>
+          <div class="captura"><img src="/static/manual/exportar.jpg" alt="Sección Exportar" loading="lazy"></div>
+        </div>
+        <div class="texto">
+          <h3 style="margin-top:0">Exportar <span class="etiqueta-admin">según perfil</span></h3>
+          <p>Permite descargar planillas Excel con los trámites filtrados por estado, tipo y fechas, y el informe de <strong>cumplimiento del Numeral 6</strong> (investigaciones que no han entregado resultados).</p>
+          <p>Si su perfil tiene permiso para <strong>agregar</strong>, también verá <strong>Envío de correos</strong>, para pedir a los investigadores sus informes.</p>
+          <p>Si no ve esta sección, su perfil no la incluye.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section class="capitulo" id="perfiles">
+      <header><span class="num">11</span><h2>Perfiles y permisos</h2></header>
+      <div class="texto">
+        <p class="lead">Cada persona tiene un perfil. El perfil define <strong>qué secciones ve</strong>, <strong>qué región ve</strong> y <strong>qué puede hacer</strong>.</p>
+        <p>La tabla muestra lo que trae cada perfil al crearse. El administrador puede activar o quitar secciones y permisos a cada persona.</p>
+      </div>
+      <div class="tabla-scroll">
+        <table class="perfiles">
+          <thead>
+            <tr>
+              <th scope="col">Qué puede hacer</th>
+              <th scope="col">Administrador<small>superusuario nacional</small></th>
+              <th scope="col">Encargado/a de investigación<small>regional</small></th>
+              <th scope="col">Encargado/a de filmación<small>regional</small></th>
+              <th scope="col">Encargado/a de ambos<small>regional</small></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="grupo"><th colspan="5" scope="colgroup">Secciones que ve</th></tr>
+            <tr><th scope="row">Portada</th><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td></tr>
+            <tr><th scope="row">Investigación · Resumen</th><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td><td><span class="op">Se puede activar</span></td><td><span class="si">Sí</span></td></tr>
+            <tr><th scope="row">Filmación y Fotografía · Resumen</th><td><span class="si">Sí</span></td><td><span class="op">Se puede activar</span></td><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td></tr>
+            <tr><th scope="row">Búsqueda</th><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td></tr>
+            <tr><th scope="row">Exportar<small>Excel, cumplimiento y correos</small></th><td><span class="si">Sí</span></td><td><span class="op">Se puede activar</span></td><td><span class="op">Se puede activar</span></td><td><span class="op">Se puede activar</span></td></tr>
+            <tr><th scope="row">Usuarios<small>administración de cuentas</small></th><td><span class="si">Sí</span></td><td><span class="no">No</span></td><td><span class="no">No</span></td><td><span class="no">No</span></td></tr>
+            <tr class="grupo"><th colspan="5" scope="colgroup">Datos que ve</th></tr>
+            <tr><th scope="row">Regiones</th><td><span class="si">Las 16</span></td><td><span class="op">Solo la suya</span></td><td><span class="op">Solo la suya</span></td><td><span class="op">Solo la suya</span></td></tr>
+            <tr class="grupo"><th colspan="5" scope="colgroup">Acciones</th></tr>
+            <tr><th scope="row">Ver y consultar<small>gráficos, tablas, detalle, mapas</small></th><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td></tr>
+            <tr><th scope="row">Agregar<small>subir archivos entregados, crear y enviar correos</small></th><td><span class="si">Sí</span></td><td><span class="op">Se puede activar</span></td><td><span class="op">Se puede activar</span></td><td><span class="op">Se puede activar</span></td></tr>
+            <tr><th scope="row">Editar<small>actualizar datos desde CeroFilas y Drive</small></th><td><span class="si">Sí</span></td><td><span class="op">Se puede activar</span></td><td><span class="op">Se puede activar</span></td><td><span class="op">Se puede activar</span></td></tr>
+            <tr><th scope="row">Borrar<small>eliminar registros</small></th><td><span class="si">Sí</span></td><td><span class="op">Se puede activar</span></td><td><span class="op">Se puede activar</span></td><td><span class="op">Se puede activar</span></td></tr>
+            <tr><th scope="row">Crear cuentas, restablecer claves y descargar la planilla de usuarios</th><td><span class="si">Sí</span></td><td><span class="no">No</span></td><td><span class="no">No</span></td><td><span class="no">No</span></td></tr>
+            <tr><th scope="row">Elegir las fotos de la plataforma</th><td><span class="si">Sí</span></td><td><span class="no">No</span></td><td><span class="no">No</span></td><td><span class="no">No</span></td></tr>
+            <tr><th scope="row">Cambiar su propia clave</th><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td><td><span class="si">Sí</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="simbolos"><span class="si">Incluido</span><span class="op">El administrador puede activarlo o quitarlo</span><span class="no">No disponible para ese perfil</span></div>
+      <div class="aviso consejo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+        <p><b>¿Necesita algo que no ve?</b>Pida al administrador que agregue la sección o el permiso a su perfil. El cambio se aplica la próxima vez que abra la plataforma.</p>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section class="capitulo solo-admin" id="administrar">
+      <header><span class="num">12</span><h2>Administrar usuarios</h2><span class="etiqueta-admin">Solo administrador</span></header>
+      <p class="texto lead">La sección <strong>Usuarios</strong> aparece solo para el administrador. Desde ahí se crean las cuentas, se definen los permisos y se entregan las claves.</p>
+      <figure>
+        <div class="captura">
+          <img src="/static/manual/usuarios.jpg" alt="Sección Usuarios con la lista de cuentas (nombres difuminados)" loading="lazy">
+          <span class="marca" style="left:23.7%;top:47.5%">1</span>
+          <span class="marca" style="left:58.8%;top:47.5%">2</span>
+          <span class="marca" style="left:76%;top:47.5%">3</span>
+          <span class="marca" style="left:88%;top:47.5%">4</span>
+          <span class="marca" style="left:93.5%;top:69%">5</span>
+          <span class="marca" style="left:96.2%;top:69%">6</span>
+        </div>
+        <ul class="leyenda">
+          <li data-n="1"><span><strong>Buscar</strong> por nombre, correo o región, y filtrar por perfil.</span></li>
+          <li data-n="2"><span><strong>Buscar encargados en trámites:</strong> crea las cuentas de los funcionarios que aparecen a cargo de etapas en cada región.</span></li>
+          <li data-n="3"><span><strong>Descargar planilla</strong> con las claves temporales.</span></li>
+          <li data-n="4"><span><strong>Nuevo usuario.</strong></span></li>
+          <li data-n="5"><span><kbd>✏️</kbd> <strong>Editar</strong> perfil, región, secciones y permisos.</span></li>
+          <li data-n="6"><span><kbd>🔑</kbd> <strong>Restablecer clave</strong> cuando alguien la olvida.</span></li>
+        </ul>
+      </figure>
+
+      <h3>Crear o editar una cuenta</h3>
+      <div class="dupla">
+        <div class="captura"><img src="/static/manual/usuario_editar.jpg" alt="Formulario para editar un usuario" loading="lazy"></div>
+        <div class="texto">
+          <ol class="pasos">
+            <li><div>Escriba el <strong>nombre</strong> y el <strong>correo institucional</strong> (el correo no se puede cambiar después).</div></li>
+            <li><div>Elija el <strong>perfil</strong> y la <strong>región</strong>. Marque «Solo puede ver los datos de su región» para encargados regionales.</div></li>
+            <li><div>Marque las <strong>secciones</strong> que verá la persona.</div></li>
+            <li><div>Marque lo que <strong>puede hacer</strong>: agregar, editar o borrar. «Ver y consultar» siempre está incluido.</div></li>
+            <li><div>Haga clic en <span class="boton verde">Guardar</span>. Al crear una cuenta, la plataforma muestra una clave temporal una sola vez.</div></li>
+          </ol>
+          <p style="margin-top:12px">Para suspender a alguien sin borrarlo, desmarque <strong>Cuenta activa</strong>.</p>
+        </div>
+      </div>
+
+      <h3>Entregar las claves: la planilla</h3>
+      <div class="dupla">
+        <div class="captura angosta"><img src="/static/manual/planilla.jpg" alt="Ventana para descargar la planilla de usuarios" loading="lazy"></div>
+        <div class="texto">
+          <ol class="pasos">
+            <li><div>Haga clic en <span class="boton">⬇ Descargar planilla</span> y escriba <strong>su propia clave</strong>.</div></li>
+            <li><div>Abra el Excel: le pedirá la misma clave, porque viene protegido.</div></li>
+            <li><div>Entregue a cada persona su correo y su clave temporal, por un canal privado.</div></li>
+          </ol>
+        </div>
+      </div>
+      <div class="aviso importante">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <p><b>Cada descarga cambia las claves temporales</b>Las personas que aún no definen su clave reciben una nueva en cada descarga, así que la planilla anterior deja de servir: use siempre la última. Quien ya eligió su clave aparece como «Activa – clave propia» y no se toca, salvo que usted use <kbd>🔑</kbd>.</p>
+      </div>
+      <div class="texto">
+        <h3>Otras tareas del administrador</h3>
+        <ul>
+          <li><strong>Gestionar fotos</strong> (en la Portada): elegir qué fotos de los informes se muestran en la plataforma y en la pantalla de ingreso.</li>
+          <li><strong>Vincular Google Drive y Gmail</strong>: necesario para ver los archivos entregados y enviar correos. Si la plataforma avisa «Drive no autorizado», autorice de nuevo.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section class="capitulo" id="preguntas">
+      <header><span class="num" id="num-preguntas">13</span><h2>Preguntas frecuentes</h2></header>
+      <details><summary>Ingreso mi clave y vuelve a pedirme el correo.</summary>
+        <p>La clave no es correcta. Revise que no tenga activadas las mayúsculas (tecla <kbd>Bloq Mayús</kbd>). Si es una clave temporal, puede haber sido reemplazada por una nueva: pida otra al administrador.</p></details>
+      <details><summary>No veo la sección que necesito.</summary>
+        <p>Su perfil no la incluye. Pida al administrador que la agregue.</p></details>
+      <details><summary>Solo veo datos de mi región. ¿Es un error?</summary>
+        <p>No. Los perfiles regionales muestran solo su región. Si necesita ver otras regiones, pídalo al administrador.</p></details>
+      <details><summary>Los números no coinciden con lo que veo en CeroFilas.</summary>
+        <p>La plataforma se actualiza sola cada pocos minutos. Revise también los años elegidos arriba a la derecha: solo se cuentan los trámites que ingresaron en esos años.</p></details>
+      <details><summary>Un trámite aparece rechazado, pero en CeroFilas dice «completado».</summary>
+        <p>En CeroFilas, un trámite rechazado también termina como «completado». La plataforma lee la decisión de CONAF registrada en el formulario y lo muestra como rechazado. El motivo aparece en el detalle del trámite.</p></details>
+      <details><summary>¿Puedo aprobar o rechazar solicitudes desde aquí?</summary>
+        <p>No. Las solicitudes se siguen gestionando en CeroFilas. Esta plataforma sirve para seguirlas y analizarlas.</p></details>
+      <details><summary>¿Es seguro usarla en un computador compartido?</summary>
+        <p>Sí, si al terminar hace clic en <strong>Cerrar sesión</strong>. No guarde la clave en el navegador de un computador que usan otras personas.</p></details>
+    </section>
+
+    <!-- 14 -->
+    <section class="capitulo" id="glosario">
+      <header><span class="num" id="num-glosario">14</span><h2>Glosario</h2></header>
+      <dl class="glosario">
+        <dt>Trámite</dt><dd>Una solicitud de permiso ingresada en CeroFilas, con su número de identificación (por ejemplo #37856800).</dd>
+        <dt>Etapa</dt><dd>Cada paso del trámite. Cada etapa está asignada a una persona: el solicitante o un funcionario de CONAF.</dd>
+        <dt>Pendiente o en trámite</dt><dd>Todavía tiene una etapa abierta en CONAF.</dd>
+        <dt>Plazo vencido</dt><dd>La etapa actual o el plazo total del proceso ya pasó su fecha límite.</dd>
+        <dt>Completado</dt><dd>CONAF terminó y aprobó la solicitud.</dd>
+        <dt>Recepción pendiente</dt><dd>CONAF ya terminó, pero el solicitante aún no abre la respuesta. Se cuenta como completado.</dd>
+        <dt>Rechazado</dt><dd>CONAF no aprobó la solicitud. El motivo aparece en el detalle.</dd>
+        <dt>Permiso activo</dt><dd>Aprobado y con la fecha de hoy dentro de su período de actividades, o próximo a comenzar, o en evaluación.</dd>
+        <dt>Mediana</dt><dd>El valor típico: la mitad de los casos tarda menos y la otra mitad, más.</dd>
+        <dt>Numeral 6</dt><dd>Norma del Reglamento de Investigación que obliga a entregar los resultados a CONAF.</dd>
+        <dt>Clave temporal</dt><dd>Clave de un solo uso que entrega el administrador. Al ingresar con ella, la plataforma pide definir una clave propia.</dd>
+      </dl>
+      <p class="pie">Manual de Permisos SNAP · Gerencia de Áreas Protegidas, CONAF · Octubre 2026. Las capturas usan datos reales con la información personal difuminada.</p>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+  // Perfil del lector: oculta el capítulo de administración para encargados
+  const botones = document.querySelectorAll('.perfil-elige button');
+  const numeros = { encargado: ['12', '13'], todo: ['13', '14'] };
+  function elegir(perfil) {
+    document.body.dataset.perfil = perfil;
+    botones.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.perfil === perfil)));
+    const [p, g] = numeros[perfil] || numeros.todo;
+    document.getElementById('num-preguntas').textContent = p;
+    document.getElementById('num-glosario').textContent = g;
+    try { localStorage.setItem('manual-perfil', perfil); } catch (e) {}
+  }
+  botones.forEach(b => b.addEventListener('click', () => elegir(b.dataset.perfil)));
+  let guardado = null;
+  try { guardado = localStorage.getItem('manual-perfil'); } catch (e) {}
+  elegir(location.hash === '#encargado' ? 'encargado' : (guardado || 'todo'));
+
+  // Copiar la dirección
+  document.getElementById('copiar-url').addEventListener('click', async e => {
+    const boton = e.currentTarget;
+    try {
+      await navigator.clipboard.writeText('https://permisos.monitoreo-snap.cl');
+      boton.textContent = 'Copiada';
+    } catch (err) {
+      const r = document.createRange(); r.selectNodeContents(document.getElementById('url'));
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      boton.textContent = 'Seleccionada: copie con Ctrl+C';
+    }
+    setTimeout(() => { boton.textContent = 'Copiar'; }, 2500);
+  });
+})();
+</script>
+{% endverbatim %}

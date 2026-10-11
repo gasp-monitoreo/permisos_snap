@@ -701,6 +701,15 @@ def mi_perfil(request):
             **perfil_de(u).como_dict()}
 
 
+@api.post('/me/tutorial')
+def mi_tutorial(request):
+    """El usuario elige no volver a ver el aviso del tutorial (o volver a verlo)."""
+    p = perfil_de(request.user)
+    p.ver_tutorial = not bool(_cuerpo(request).get('ocultar'))
+    p.save(update_fields=['ver_tutorial', 'actualizado_en'])
+    return {'ok': True, 'ver_tutorial': p.ver_tutorial}
+
+
 def _usuario_dict(u):
     p = perfil_de(u)
     return {

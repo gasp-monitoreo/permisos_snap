@@ -8,6 +8,7 @@ urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='login.html', authentication_form=LoginForm,
                                                 redirect_authenticated_user=True), name='login'),
     path('salud', views.salud, name='salud'),
+    path('manual/', views.manual, name='manual'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('cambiar-clave/', views.cambiar_clave, name='cambiar-clave'),
     path('', views.index, name='index'),

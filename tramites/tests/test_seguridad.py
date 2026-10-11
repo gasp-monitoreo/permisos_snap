@@ -157,3 +157,26 @@ def test_cambio_de_clave_rechaza_claves_debiles():
     assert r.status_code == 200 and ('común' in r.content.decode() or 'números' in r.content.decode())
     u.refresh_from_db()
     assert u.check_password(CLAVE)
+
+
+# ─── Aviso del tutorial ───────────────────────────────────────────────────────
+@pytest.mark.django_db
+def test_aviso_tutorial_una_vez_por_ingreso_y_se_puede_desactivar():
+    _usuario('ana@conaf.cl')
+    c = Client()
+    c.post('/login/', {'username': 'ana@conaf.cl', 'password': CLAVE})
+    assert 'tuto-aviso' in c.get('/').content.decode()          # al ingresar
+    assert 'tuto-aviso' not in c.get('/').content.decode()      # no en cada recarga
+    c.get('/')
+    token = c.cookies['csrftoken'].value
+    assert c.post('/api/me/tutorial', data={'ocultar': True}, content_type='application/json',
+                  HTTP_X_CSRFTOKEN=token).json()['ver_tutorial'] is False
+    c.post('/logout/')
+    c.post('/login/', {'username': 'ana@conaf.cl', 'password': CLAVE})
+    assert 'tuto-aviso' not in c.get('/').content.decode()      # ya no se ofrece
+    assert c.get('/manual/').status_code == 200
+
+
+@pytest.mark.django_db
+def test_manual_requiere_sesion():
+    assert Client().get('/manual/').status_code == 302

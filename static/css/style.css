@@ -1668,3 +1668,24 @@ a.sb-logout { text-decoration: none; }
   .usr-grid, .usr-checks { grid-template-columns: 1fr; }
   .usr-barra input, .usr-barra select { min-width: 0; flex: 1; }
 }
+
+/* ── Aviso del tutorial al iniciar sesión ── */
+.tuto-aviso {
+  position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: rgba(1, 38, 26, .45); backdrop-filter: blur(3px);
+}
+.tuto-caja {
+  background: var(--surface); border-radius: 18px; max-width: 420px; width: 100%;
+  padding: 28px 26px 20px; text-align: center; border-top: 5px solid var(--em-600);
+  box-shadow: 0 24px 60px rgba(0,0,0,.25); animation: modalIn .2s cubic-bezier(.34,1.56,.64,1);
+}
+.tuto-emblema { width: 64px; height: 64px; object-fit: contain; margin-bottom: 8px; }
+.tuto-caja h3 { margin: 4px 0 8px; font-size: 20px; color: var(--em-900); }
+.tuto-caja p { margin: 0 0 18px; color: var(--text-muted, #64748B); font-size: 14.5px; line-height: 1.5; }
+.tuto-botones { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.tuto-botones > * { text-decoration: none; min-width: 130px; justify-content: center; }
+.tuto-check {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; font-size: 13px;
+  color: var(--text-muted, #64748B); cursor: pointer; user-select: none;
+}
+.tuto-check input { width: 16px; height: 16px; accent-color: var(--em-600); cursor: pointer; }

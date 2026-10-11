@@ -77,6 +77,10 @@
 
   <form method="post" action="/logout/" class="sb-footer">
     {% csrf_token %}
+    <a href="/manual/" target="_blank" rel="noopener" class="sb-logout" title="Manual de uso">
+      <svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21V5M8 7h7M8 11h5"/></svg>
+      <span>Manual</span>
+    </a>
     <a href="/cambiar-clave/" class="sb-logout" title="Cambiar mi clave">
       <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
       <span>Mi clave</span>
@@ -558,6 +562,21 @@
 
 {{ perfil|json_script:"perfil-data" }}
 <script>window.PERFIL = JSON.parse(document.getElementById('perfil-data').textContent);</script>
+{% if ofrecer_tutorial %}
+<div class="tuto-aviso" id="tuto-aviso" role="dialog" aria-labelledby="tuto-titulo" aria-modal="true">
+  <div class="tuto-caja">
+    <img src="/static/img/emblema.png" alt="" class="tuto-emblema">
+    <h3 id="tuto-titulo">¿Quiere revisar el tutorial?</h3>
+    <p>El manual explica paso a paso cómo usar la plataforma y qué puede hacer con su perfil.</p>
+    <div class="tuto-botones">
+      <a href="/manual/" target="_blank" rel="noopener" class="btn-primary" data-tuto="ver">Ver tutorial</a>
+      <button type="button" class="btn-secondary" data-tuto="cerrar">Ahora no</button>
+    </div>
+    <label class="tuto-check"><input type="checkbox" id="tuto-no-mostrar"> No quiero ver más este mensaje</label>
+  </div>
+</div>
+<script src="/static/js/tutorial.js"></script>
+{% endif %}
 <script src="/static/js/csrf.js"></script>
 <script src="/static/js/app.js"></script>
 <script src="/static/js/panorama.js"></script>

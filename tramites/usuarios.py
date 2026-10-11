@@ -109,6 +109,15 @@ class SesionAuth:
         return u
 
 
+def _al_ingresar(sender, request, user, **kw):
+    """Marca la sesión para ofrecer el tutorial una vez por inicio de sesión."""
+    request.session['ofrecer_tutorial'] = True
+
+
+from django.contrib.auth.signals import user_logged_in  # noqa: E402
+user_logged_in.connect(_al_ingresar, dispatch_uid='ofrecer_tutorial')
+
+
 # ─── Freno a intentos de ingreso ─────────────────────────────────────────────
 MAX_FALLOS_USUARIO, MAX_FALLOS_IP, BLOQUEO_SEG = 5, 20, 15 * 60
 

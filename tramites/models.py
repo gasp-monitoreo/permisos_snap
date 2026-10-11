@@ -106,6 +106,7 @@ class PerfilUsuario(models.Model):
     puede_editar  = models.BooleanField(default=False)
     puede_borrar  = models.BooleanField(default=False)
     debe_cambiar_password = models.BooleanField(default=True)       # clave temporal pendiente
+    ver_tutorial = models.BooleanField(default=True)                # aviso del manual al iniciar sesión
     creado_en    = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
 
@@ -129,4 +130,5 @@ class PerfilUsuario(models.Model):
             'secciones': self.secciones_visibles(),
             'permisos': {a: self.puede(a) for a in ('ver', 'agregar', 'editar', 'borrar')},
             'superusuario': self.user.is_superuser,
+            'ver_tutorial': self.ver_tutorial,
         }
