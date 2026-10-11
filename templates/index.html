@@ -77,6 +77,10 @@
 
   <form method="post" action="/logout/" class="sb-footer">
     {% csrf_token %}
+    <button type="button" class="sb-logout" id="btn-recorrido" title="Recorrido guiado por la plataforma">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg>
+      <span>Recorrido guiado</span>
+    </button>
     <a href="/manual/" target="_blank" rel="noopener" class="sb-logout" title="Manual de uso">
       <svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21V5M8 7h7M8 11h5"/></svg>
       <span>Manual</span>
@@ -567,11 +571,13 @@
   <div class="tuto-caja">
     <img src="/static/img/emblema.png" alt="" class="tuto-emblema">
     <h3 id="tuto-titulo">¿Quiere revisar el tutorial?</h3>
-    <p>El manual explica paso a paso cómo usar la plataforma y qué puede hacer con su perfil.</p>
-    <div class="tuto-botones">
-      <a href="/manual/" target="_blank" rel="noopener" class="btn-primary" data-tuto="ver">Ver tutorial</a>
-      <button type="button" class="btn-secondary" data-tuto="cerrar">Ahora no</button>
+    <p>Elija cómo prefiere conocer la plataforma: un recorrido guiado aquí mismo, o el manual completo con imágenes.</p>
+    <div class="tuto-botones tres">
+      <button type="button" class="btn-primary" data-tuto="recorrido">▶ Recorrido guiado (2 min)</button>
+      <a href="/manual/" target="_blank" rel="noopener" class="btn-secondary" data-tuto="ver">📖 Leer el manual</a>
+      <a href="/manual/pdf" class="btn-secondary" data-tuto="pdf">⬇ Descargar manual en PDF</a>
     </div>
+    <button type="button" class="tuto-ahora-no" data-tuto="cerrar">Ahora no</button>
     <label class="tuto-check"><input type="checkbox" id="tuto-no-mostrar"> No quiero ver más este mensaje</label>
   </div>
 </div>
@@ -585,5 +591,6 @@
 <script src="/static/js/layout.js"></script>
 <script src="/static/js/perfil.js"></script>
 {% if perfil.superusuario %}<script src="/static/js/usuarios.js"></script>{% endif %}
+<script src="/static/js/recorrido.js"></script>
 </body>
 </html>

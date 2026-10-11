@@ -180,3 +180,11 @@ def test_aviso_tutorial_una_vez_por_ingreso_y_se_puede_desactivar():
 @pytest.mark.django_db
 def test_manual_requiere_sesion():
     assert Client().get('/manual/').status_code == 302
+
+
+@pytest.mark.django_db
+def test_manual_pdf_requiere_sesion_y_se_descarga():
+    assert Client().get('/manual/pdf').status_code == 302
+    r = _cliente(_usuario('ana@conaf.cl')).get('/manual/pdf')
+    assert r.status_code == 200 and r['Content-Type'] == 'application/pdf'
+    assert 'attachment' in r['Content-Disposition']

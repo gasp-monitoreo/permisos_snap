@@ -35,6 +35,18 @@ def manual(request):
     return render(request, 'manual.html')
 
 
+MANUAL_PDF = os.path.join(settings.BASE_DIR, 'docs', 'manual_permisos_snap.pdf')
+
+
+@login_required
+def manual_pdf(request):
+    """PDF del manual (se regenera con scripts/manual_pdf.py cuando cambia el manual)."""
+    if not os.path.isfile(MANUAL_PDF):
+        raise Http404('manual')
+    return FileResponse(open(MANUAL_PDF, 'rb'), as_attachment=True,
+                        filename='Manual Permisos SNAP.pdf', content_type='application/pdf')
+
+
 @login_required
 def cambiar_clave(request):
     """Cambio de clave: obligatorio con clave temporal, voluntario después."""

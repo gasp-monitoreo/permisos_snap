@@ -9,6 +9,7 @@ urlpatterns = [
                                                 redirect_authenticated_user=True), name='login'),
     path('salud', views.salud, name='salud'),
     path('manual/', views.manual, name='manual'),
+    path('manual/pdf', views.manual_pdf, name='manual-pdf'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('cambiar-clave/', views.cambiar_clave, name='cambiar-clave'),
     path('', views.index, name='index'),

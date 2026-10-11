@@ -14,7 +14,9 @@
     aviso.remove();
   };
   aviso.addEventListener('click', e => {
-    if (e.target.closest('[data-tuto]') || e.target === aviso) cerrar();
+    const accion = e.target.closest('[data-tuto]')?.dataset.tuto;
+    if (accion || e.target === aviso) cerrar();
+    if (accion === 'recorrido') window.Recorrido?.iniciar();
   });
   document.addEventListener('keydown', function esc(e) {
     if (e.key === 'Escape' && document.body.contains(aviso)) { cerrar(); document.removeEventListener('keydown', esc); }

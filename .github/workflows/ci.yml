@@ -49,3 +49,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t permisos-snap:ci .
+
+  # Despliegue automático a GCP tras pasar las pruebas (push a main).
+  # Se activa al crear los secretos GCP_SSH_KEY y GCP_KNOWN_HOSTS (ver scripts/desplegar.sh).
+  # La llave está restringida en la VM: solo puede ejecutar scripts/desplegar.sh.
+  desplegar:
+    runs-on: ubuntu-latest
+    needs: [pruebas, imagen]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency: produccion
+    environment: produccion
+    steps:
+      - name: Desplegar en la VM
+        env:
+          LLAVE: ${{ secrets.GCP_SSH_KEY }}
+          HOSTS: ${{ secrets.GCP_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$LLAVE" ]; then echo "::notice::Despliegue automático no configurado (faltan secretos)"; exit 0; fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$LLAVE" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTS" > ~/.ssh/known_hosts
+          ssh -o BatchMode=yes ignac@34.176.136.133
+          curl -fsS https://permisos.monitoreo-snap.cl/salud
