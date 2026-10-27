@@ -789,7 +789,9 @@ function areasEnRegion(t, region) {
   if (!region) return t.areas_protegidas || [];
   const porRegion = t.areas_region?.[region];
   if (porRegion?.length) return porRegion;
-  return (t.regiones_list || []).length === 1 ? (t.areas_protegidas || []) : [];
+  // Fallback para trámites sin desglose por región: si el trámite está en esa región usar todas sus áreas
+  if ((t.regiones_list || []).includes(region)) return t.areas_protegidas || [];
+  return [];
 }
 
 function filtrarPorAmbito(lista, { sinRegion = false, sinArea = false } = {}) {
