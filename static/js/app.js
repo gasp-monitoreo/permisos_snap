@@ -1560,7 +1560,9 @@ function renderTablaEntregadas(filtroTema) {
     }).join('');
     filtroEl.onclick = ev => {
       const btn = ev.target.closest('.tema-filter-btn');
-      if (btn) renderTablaEntregadas(btn.dataset.tema);
+      if (!btn) return;
+      renderTablaEntregadas(btn.dataset.tema);
+      document.dispatchEvent(new CustomEvent('entregadas-tema', { detail: { tema: btn.dataset.tema } }));
     };
   }
 

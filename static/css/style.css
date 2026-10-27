@@ -2128,7 +2128,7 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
 .fx-visor { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
 .fx-visor-cab { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--surface2); font-size: 13.5px; }
 .fx-visor-cab a { color: var(--em-700); font-weight: 600; }
-.fx-visor iframe { width: 100%; height: 520px; border: 0; display: block; background: #fff; }
+.fx-visor embed { width: 100%; height: 520px; border: 0; display: block; background: #fff; }
 .fx-docs-cab { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .fx-docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .fx-doc { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; text-decoration: none; color: var(--text); }
@@ -2150,7 +2150,7 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
   .fx-cab, .fx-panel { padding-left: 16px; padding-right: 16px; }
   .fx-ahora, .fx-tl, .fx-tabs { margin-left: 16px; margin-right: 16px; }
   .fx-cab { position: static; }
-  .fx-visor iframe { height: 380px; }
+  .fx-visor embed { height: 380px; }
 }
 
 /* ── Protección de datos (Ley N°21.719): dato difuminado y tachado (static/js/privacidad.js) ── */

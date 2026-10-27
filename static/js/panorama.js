@@ -309,12 +309,24 @@ function _panTabla(lista, total) {
   </section>`;
 }
 
+function _panSyncEntregadas() {
+  if (!window.renderTablaEntregadas) return;
+  const invTemas = [...PAN_FILTRO.tema].filter(v => v.startsWith('inv|')).map(v => v.slice(4));
+  window.renderTablaEntregadas(invTemas[0] || '');
+}
+
 function _panClic(e) {
   const root = e.currentTarget;
   const abrir = e.target.closest('tr[data-abrir]');
   if (abrir) return openModal(Number(abrir.dataset.abrir));
   if (e.target.closest('[data-pan-mas]')) { _panPag++; return _panPintar(true); }
-  if (e.target.closest('[data-pan-limpiar]')) { Object.values(PAN_FILTRO).forEach(f => f.clear()); _panPag = 1; return _panPintar(true); }
+  if (e.target.closest('[data-pan-limpiar]')) {
+    Object.values(PAN_FILTRO).forEach(f => f.clear());
+    _panPag = 1;
+    _panPintar(true);
+    _panSyncEntregadas();
+    return;
+  }
   const exp = e.target.closest('[data-pan-exp]');
   if (exp && window.descargarListaTramites) {
     const ids = JSON.parse(root.dataset.ids || '[]');
@@ -330,7 +342,9 @@ function _panClic(e) {
     const ya = PAN_FILTRO.tema.has(tema) && PAN_FILTRO.anio.has(anio);
     if (ya) { PAN_FILTRO.tema.delete(tema); PAN_FILTRO.anio.delete(anio); } else { PAN_FILTRO.tema.add(tema); PAN_FILTRO.anio.add(anio); }
     _panPag = 1;
-    return _panPintar(true, true);
+    _panPintar(true, true);
+    _panSyncEntregadas();
+    return;
   }
   const fil = e.target.closest('[data-pfil]');
   if (fil) {
@@ -340,6 +354,7 @@ function _panClic(e) {
     if (f.has(valor)) f.delete(valor); else f.add(valor);
     _panPag = 1;
     _panPintar(true, !fil.classList.contains('res-chip'));
+    if (dim === 'tema') _panSyncEntregadas();
   }
 }
 
@@ -396,6 +411,13 @@ function renderPanorama(hist) {
     root.addEventListener('click', _panClic);
     root.addEventListener('keydown', e => {
       if (e.key === 'Enter' && e.target.closest('[data-pfil], [data-pcelda], tr[data-abrir]')) { e.preventDefault(); e.target.click(); }
+    });
+    document.addEventListener('entregadas-tema', e => {
+      Object.values(PAN_FILTRO).forEach(f => f.clear());
+      const tema = e.detail.tema;
+      if (tema) PAN_FILTRO.tema.add(`inv|${tema}`);
+      _panPag = 1;
+      _panPintar(true);
     });
     root.dataset.listo = '1';
   }

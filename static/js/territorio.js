@@ -156,6 +156,11 @@ function _terrDibujar() {
     }
     a.permisos.forEach(p => {
       const sit = PRES_SIT.find(s => s.key === p.situacion);
+      if (p.puntos.length >= 3) {
+        L.polygon(p.puntos, { color: sit.color, weight: 1.5, fillColor: sit.color, fillOpacity: .08, dashArray: '5 4' })
+          .bindPopup(`<div class="pres-pop"><strong>#${p.id}</strong><br>Área declarada en el formulario (${p.puntos.length} coordenadas)<br>
+            ${p.titulo ? `<em>${_esc(p.titulo)}</em><br>` : ''}<a href="#" data-tramite="${p.id}">Ver detalle</a></div>`).addTo(capas);
+      }
       p.puntos.forEach(([lat, lon]) => L.circleMarker([lat, lon], { radius: _terr.area ? 7 : 5, color: '#fff', weight: 1.5, fillColor: sit.color, fillOpacity: .95 })
         .bindPopup(_terrPopupPermiso(p)).addTo(capas));
       (p.registros || []).forEach(f => L.geoJSON(f, {
