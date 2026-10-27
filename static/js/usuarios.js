@@ -93,6 +93,7 @@
     f.tipo.value = u ? u.tipo : 'inv';
     f.region.value = u ? u.region : '';
     f.solo_su_region.checked = u ? u.solo_su_region : true;
+    f.areas.value = u ? (u.areas || []).join('\n') : '';
     f.activo.checked = u ? u.activo : true;
     const secs = u ? u.secciones : ['portada', 'busqueda', 'resumen_inv'];
     [...document.querySelectorAll('#usr-secciones input')].forEach(c => { c.checked = secs.includes(c.value); });
@@ -113,6 +114,7 @@
     const datos = {
       nombre: f.nombre.value.trim(), email: f.email.value.trim(), tipo: f.tipo.value, region: f.region.value,
       solo_su_region: f.solo_su_region.checked, activo: f.activo.checked,
+      areas: f.areas.value.split('\n').map(a => a.trim()).filter(Boolean),
       secciones: [...document.querySelectorAll('#usr-secciones input:checked')].map(c => c.value),
       permisos: { agregar: f.perm_agregar.checked, editar: f.perm_editar.checked, borrar: f.perm_borrar.checked },
     };

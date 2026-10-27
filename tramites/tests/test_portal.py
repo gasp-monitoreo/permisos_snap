@@ -386,3 +386,59 @@ def test_informe_pdf_respeta_region_y_protege_datos(monkeypatch):
     assert '12.345.678-9' in texto(_cliente(_usuario('editor@conaf.cl', puede_editar=True)))
     otra = _usuario('otra@conaf.cl', region='Araucanía', solo_su_region=True)
     assert _cliente(otra).get('/api/tramites/700/informe.pdf').status_code == 403
+
+
+# ─── Ajuste manual del estado ─────────────────────────────────────────────────
+@pytest.fixture
+def _tramite_ajustable(monkeypatch):
+    import tramites.adjuntos as adj
+    t = {'id': 800, 'proceso_id': 517, 'estado': 'pendiente', 'etapas_completadas': 1, 'regiones_list': ['Maule'],
+         'areas_protegidas': ['Reserva Nacional Altos de Lircay'], 'nombre_solicitante': 'Ana', 'datos_raw': {}}
+    monkeypatch.setattr(adj, 'tramite_vivo', lambda tid: t)
+    return t
+
+
+def _ajustar(c, **datos):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    base = {'situacion': 'desistido', 'fecha_efectiva': '2026-08-12',
+            'motivo': 'El titular informó por correo que desiste del permiso por falta de financiamiento.'}
+    base.update(datos)
+    return c.post('/api/tramites/800/ajustes', data=base)
+
+
+@pytest.mark.django_db
+def test_solo_responsables_ajustan_estado(_tramite_ajustable):
+    lector = _usuario('lector@conaf.cl', region='Maule', solo_su_region=True)
+    assert _ajustar(_cliente(lector)).status_code == 403                        # sin «Editar»
+    otra = _usuario('otra@conaf.cl', region='Araucanía', puede_editar=True)
+    assert _ajustar(_cliente(otra)).status_code == 403                          # otra región
+    area = _usuario('area@conaf.cl', region='Maule', puede_editar=True, areas=['Parque Nacional Radal Siete Tazas'])
+    assert _ajustar(_cliente(area)).status_code == 403                          # otra área de la región
+    resp = _usuario('resp@conaf.cl', region='Maule', puede_editar=True, areas=['Altos de Lircay'])
+    assert _ajustar(_cliente(resp), motivo='corto').status_code == 400          # justificación obligatoria
+    assert _ajustar(_cliente(resp)).status_code == 200
+    central = _usuario('central@conaf.cl', puede_editar=True)
+    assert _cliente(central).get('/api/tramites/800/ajustes').json()['puede_ajustar'] is True
+
+
+@pytest.mark.django_db
+def test_ajuste_se_refleja_y_se_revierte(_tramite_ajustable, monkeypatch):
+    import gzip
+    import tramites.api as api_mod
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    monkeypatch.setattr(api_mod, '_anios_busqueda', lambda: ([_tramite_ajustable], []))
+    resp = _usuario('resp@conaf.cl', region='Maule', puede_editar=True, secciones=['busqueda'])
+    c = _cliente(resp)
+    correo = SimpleUploadedFile('aviso.eml', b'From: ana@u.cl\nSubject: Desisto\n\nDesisto del permiso.', content_type='message/rfc822')
+    assert _ajustar(c, archivos=correo).status_code == 200
+    h = c.get('/api/tramites/800/ajustes').json()['historial']
+    assert h[0]['situacion'] == 'desistido' and h[0]['adjuntos'][0]['nombre'] == 'aviso.eml'
+    assert b'Desisto del permiso' in c.get(f"/api/ajustes/{h[0]['id']}/adjuntos/0").content
+    lector = _usuario('lector@conaf.cl', region='Maule', solo_su_region=True, secciones=['busqueda'])
+    assert _cliente(lector).get(f"/api/ajustes/{h[0]['id']}/adjuntos/0").status_code == 403   # respaldo con datos personales
+    idx = json.loads(gzip.decompress(c.get('/api/buscar/indice', HTTP_ACCEPT_ENCODING='gzip').content))['data'][0]
+    assert idx['ajuste']['sit'] == 'cerrado_admin'
+    assert _ajustar(c, situacion='revertido', motivo='Error de registro: el titular confirmó que sigue con el permiso.').status_code == 200
+    idx = json.loads(gzip.decompress(c.get('/api/buscar/indice', HTTP_ACCEPT_ENCODING='gzip').content))['data'][0]
+    assert idx['ajuste'] is None
+    assert len(c.get('/api/tramites/800/ajustes').json()['historial']) == 2       # el historial no se borra

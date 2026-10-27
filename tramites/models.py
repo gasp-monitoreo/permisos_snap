@@ -101,6 +101,7 @@ class PerfilUsuario(models.Model):
     tipo         = models.CharField(max_length=10, choices=TIPOS_PERFIL, default='nacional')
     region       = models.CharField(max_length=50, blank=True)      # nombre en REGIONES_CHILE; vacío = nacional
     solo_su_region = models.BooleanField(default=False)              # restringe datos a su región
+    areas        = models.JSONField(default=list, blank=True)         # áreas protegidas a cargo (vacío = todas las de su ámbito)
     secciones    = models.JSONField(default=list)                     # claves de SECCIONES
     puede_agregar = models.BooleanField(default=False)
     puede_editar  = models.BooleanField(default=False)
@@ -129,6 +130,7 @@ class PerfilUsuario(models.Model):
             'tipo': self.tipo, 'region': self.region, 'solo_su_region': self.solo_su_region,
             'secciones': self.secciones_visibles(),
             'permisos': {a: self.puede(a) for a in ('ver', 'agregar', 'editar', 'borrar')},
+            'areas': self.areas or [],
             'superusuario': self.user.is_superuser,
             've_sensible': self.user.is_superuser or self.puede('editar'),   # Ley N°21.719
             'ver_tutorial': self.ver_tutorial,
@@ -218,3 +220,40 @@ class RegistroGeografico(models.Model):
                 'modificado_en': self.modificado_en.isoformat() if self.modificado_en else None,
             },
         }
+
+
+# ─── Ajuste manual del estado de un permiso ───────────────────────────────────
+SITUACIONES_AJUSTE = {
+    'desistido':         'Desistido por el solicitante',
+    'sin_respuesta':     'Cerrado por falta de respuesta del solicitante',
+    'aprobado_externo':  'Aprobado (registrado fuera de Cero Filas)',
+    'rechazado_externo': 'Rechazado (registrado fuera de Cero Filas)',
+    'anulado':           'Anulado (duplicado o error de ingreso)',
+    'revertido':         'Sin ajuste: vuelve al estado de Cero Filas',
+}
+
+
+class AjusteEstado(models.Model):
+    """Corrección del estado de un permiso que Cero Filas no refleja (p. ej. el solicitante
+    desistió y nadie lo registró). Siempre con justificación y autor; el historial no se borra:
+    el ajuste vigente es el último (y «revertido» lo anula)."""
+    tramite_id     = models.IntegerField(db_index=True)
+    situacion      = models.CharField(max_length=20, choices=list(SITUACIONES_AJUSTE.items()))
+    fecha_efectiva = models.DateField()
+    motivo         = models.TextField()
+    autor          = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, related_name='+')
+    autor_nombre   = models.CharField(max_length=255, blank=True)   # se conserva aunque se borre la cuenta
+    creado_en      = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-creado_en', '-id']
+
+
+class AdjuntoAjuste(models.Model):
+    """Respaldo de un ajuste (correo, carta, captura). Se guarda en la base de datos para que
+    quede incluido en los respaldos diarios."""
+    ajuste  = models.ForeignKey(AjusteEstado, on_delete=models.CASCADE, related_name='adjuntos')
+    nombre  = models.CharField(max_length=200)
+    tipo    = models.CharField(max_length=100)
+    tamano  = models.IntegerField()
+    datos   = models.BinaryField()

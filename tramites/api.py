@@ -45,8 +45,9 @@ def _region_forzada(request):
 
 
 def _filtrar_region(request, lista):
+    from .ajustes import aplicar
     reg = _region_forzada(request)
-    return lista if not reg else [t for t in lista if reg in (t.get('regiones_list') or [])]
+    return aplicar(lista if not reg else [t for t in lista if reg in (t.get('regiones_list') or [])])
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -151,9 +152,10 @@ def get_tramite(request, tramite_id: int):
         data = api_get(f'/tramites/{tramite_id}')
         t    = data.get('tramite', data)
         norm = normalize_tramite(t)
-        if not _filtrar_region(request, [norm]):
+        visibles = _filtrar_region(request, [norm])
+        if not visibles:
             return api.create_response(request, {'ok': False, 'error': 'Trámite fuera de su región.'}, status=403)
-        return {'ok': True, 'data': privacidad.tramites(request, [norm])[0]}
+        return {'ok': True, 'data': privacidad.tramites(request, visibles)[0]}
     except _requests.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=status)
@@ -724,7 +726,7 @@ def _usuario_dict(u):
     return {
         'id': u.id, 'email': u.email or u.username, 'nombre': u.get_full_name(),
         'activo': u.is_active, 'superusuario': u.is_superuser,
-        'tipo': p.tipo, 'region': p.region, 'solo_su_region': p.solo_su_region,
+        'tipo': p.tipo, 'region': p.region, 'solo_su_region': p.solo_su_region, 'areas': p.areas or [],
         'secciones': p.secciones_visibles(),
         'permisos': {a: p.puede(a) for a in ('agregar', 'editar', 'borrar')},
         'clave_pendiente': p.debe_cambiar_password,
@@ -757,6 +759,8 @@ def _aplicar_datos(u, p, d):
         p.solo_su_region = bool(d['solo_su_region']) and bool(p.region)
     if 'secciones' in d:
         p.secciones = [s for s in d['secciones'] if s in SECCIONES]
+    if 'areas' in d:
+        p.areas = [str(a).strip()[:120] for a in (d['areas'] or []) if str(a).strip()][:60]
     for a in ('agregar', 'editar', 'borrar'):
         if a in (d.get('permisos') or {}):
             setattr(p, f'puede_{a}', bool(d['permisos'][a]))
@@ -1143,6 +1147,7 @@ def _registro_busqueda(t, con_registro):
         'porcentaje_avance': t.get('porcentaje_avance'),
         'archivo_autorizacion': bool(t.get('archivo_autorizacion')), 'etapa_autorizacion_id': t.get('etapa_autorizacion_id'),
         'tiene_registro': t['id'] in con_registro,
+        'ajuste': t.get('ajuste'),
     }
 
 
@@ -1311,4 +1316,70 @@ def informe_pdf(request, tramite_id: int):
     log.info('Informe PDF del trámite %s descargado por %s%s', tramite_id, request.user.pk, ' (protegido)' if protegido else '')
     resp = HttpResponse(contenido, content_type='application/pdf')
     resp['Content-Disposition'] = f'attachment; filename="informe_permiso_{int(tramite_id)}.pdf"'
+    return resp
+
+
+
+# ── Ajuste manual del estado de un permiso ────────────────────────────────────
+
+@api.get('/tramites/{tramite_id}/ajustes')
+def ajustes_listar(request, tramite_id: int):
+    from .ajustes import historial, puede_ajustar
+    from .models import SITUACIONES_AJUSTE
+    t, err = _tramite_con_acceso(request, tramite_id)
+    if err:
+        return err
+    puede = puede_ajustar(request.user, t)
+    return {'ok': True, 'puede_ajustar': puede, 'situaciones': SITUACIONES_AJUSTE,
+            'historial': historial(tramite_id, proteger=not (privacidad.ve_sensible(request.user) or puede))}
+
+
+@api.post('/tramites/{tramite_id}/ajustes')
+def ajustes_crear(request, tramite_id: int):
+    """Registra el estado real del permiso con justificación y respaldos (multipart)."""
+    from datetime import date
+    from .ajustes import guardar, puede_ajustar, validar, vigentes
+    t, err = _tramite_con_acceso(request, tramite_id)
+    if err:
+        return err
+    if not puede_ajustar(request.user, t):
+        return api.create_response(request, {'ok': False, 'error': 'Solo puede ajustar permisos de su responsabilidad (región o áreas a cargo, con permiso «Editar»).'}, status=403)
+    situacion = request.POST.get('situacion', '')
+    motivo = request.POST.get('motivo', '')
+    try:
+        fecha = date.fromisoformat(request.POST.get('fecha_efectiva', ''))
+    except ValueError:
+        fecha = None
+    if fecha and fecha > date.today():
+        return api.create_response(request, {'ok': False, 'error': 'La fecha no puede ser futura.'}, status=400)
+    archivos = request.FILES.getlist('archivos')
+    error = validar(situacion, fecha, motivo, archivos, tramite_id in vigentes([tramite_id]))
+    if error:
+        return api.create_response(request, {'ok': False, 'error': error}, status=400)
+    a = guardar(tramite_id, situacion, fecha, motivo, archivos, request.user)
+    log.info('Ajuste de estado del trámite %s: %s por %s (%s adjuntos)', tramite_id, situacion, request.user.pk, len(archivos))
+    return {'ok': True, 'id': a.id}
+
+
+@api.get('/ajustes/{ajuste_id}/adjuntos/{n}')
+def ajustes_adjunto(request, ajuste_id: int, n: int):
+    from .ajustes import puede_ajustar
+    from .models import AjusteEstado
+    a = AjusteEstado.objects.filter(pk=ajuste_id).first()
+    if not a:
+        return api.create_response(request, {'ok': False, 'error': 'No encontrado.'}, status=404)
+    t, err = _tramite_con_acceso(request, a.tramite_id)
+    if err:
+        return err
+    if not (privacidad.ve_sensible(request.user) or puede_ajustar(request.user, t)):
+        return api.create_response(request, {'ok': False, 'error': 'Los respaldos contienen datos personales: requiere rol Editor o ser responsable del permiso.'}, status=403)
+    adjuntos = list(a.adjuntos.order_by('id'))
+    if not 0 <= n < len(adjuntos):
+        return api.create_response(request, {'ok': False, 'error': 'No encontrado.'}, status=404)
+    x = adjuntos[n]
+    resp = HttpResponse(bytes(x.datos), content_type='application/octet-stream')
+    nombre = _re.sub(r'[^A-Za-z0-9._-]+', '_', x.nombre)[:120] or 'respaldo'
+    resp['Content-Disposition'] = f'attachment; filename="{nombre}"'
+    resp['X-Content-Type-Options'] = 'nosniff'
+    log.info('Respaldo de ajuste %s descargado por %s', ajuste_id, request.user.pk)
     return resp

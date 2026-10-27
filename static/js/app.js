@@ -234,6 +234,7 @@ function tramiteEsperaSolicitante(t) {
  *  · espera_solicitante (etapa en manos del solicitante) · suspendido · vencido (atraso CONAF) · al_dia
  */
 function situacionTramite(t) {
+  if (t.ajuste?.sit) return t.ajuste.sit;          // estado ajustado por un funcionario (tramites/ajustes.py)
   if (t.estado === 'rechazado') return 'rechazado';
   if (t.estado === 'completado') return t.recepcion_pendiente ? 'cierre_solicitante' : 'completado';
   if (t.suspendido) return 'suspendido';
@@ -242,6 +243,7 @@ function situacionTramite(t) {
 }
 
 function tramiteEsVencido(t) {
+  if (t.ajuste) return false;
   if (t.estado === 'rechazado' || t.estado === 'completado') return false;
   if (t.suspendido || tramiteEsperaSolicitante(t)) return false;   // no es atraso de CONAF
   if (t.etapa_actual && t.etapa_actual.fecha_vencimiento &&

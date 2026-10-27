@@ -17,7 +17,7 @@ window.Ficha = (() => {
   const DIA = 86400000;
   const RESOLUCION = /^(autorizacion|autorizacion_firmada|resolucion|resolucion_aprobacion|documento_aprobacion)$/i;
   const esConaf = email => /@conaf\.(gob\.)?cl$/i.test((email || '').trim());
-  const f = iso => iso ? formatDate(iso) : '–';
+  const f = iso => iso ? formatDate(String(iso).length === 10 ? `${iso}T12:00:00` : iso) : '–';   // fecha sola: sin corrimiento por zona horaria
   const dias = (a, b) => Math.round((b - a) / DIA);
   const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
 
@@ -77,12 +77,23 @@ window.Ficha = (() => {
   // ─── Situación ahora ───────────────────────────────────────────────────────
   function situacion(t, et, piezas) {
     const sit = situacionTramite(t);
+    if (t.ajuste) {
+      const a = t.ajuste;
+      const color = (RES_ESTADOS.find(e => e.key === sit) || {}).color || '#888';
+      return `<section class="fx-ahora" style="--c:${color}"><span class="fx-eyebrow">Situación ahora · ajustada por CONAF</span>
+        <strong>${escHtml(a.nombre)}</strong>
+        <p>Desde el ${f(a.fecha_efectiva)}. Registrado por ${escHtml(a.autor || 'un funcionario')} el ${f(a.creado_en)}; en Cero Filas figura «${escHtml(t.estado)}».
+          <button class="fx-link" data-fx-ir="seguimiento">Ver justificación y respaldos</button></p></section>`;
+    }
     const color = (RES_ESTADOS.find(e => e.key === sit) || {}).color || '#888';
     const actual = et.find(x => x.e.estado === 'pendiente');
     const hoy = new Date();
     let titulo = '', detalle = '';
     if (sit === 'vencido' && actual) {
-      titulo = `Atraso de CONAF: «${escHtml(actual.nombre)}» venció hace ${plural(dias(actual.vence, hoy), 'día', 'días')}`;
+      // el plazo vencido puede ser el de la etapa o el plazo total del proceso
+      const vence = actual.vence || (t.fecha_limite_proceso ? new Date(t.fecha_limite_proceso) : null);
+      titulo = vence ? `Atraso de CONAF: venció hace ${plural(dias(vence, hoy), 'día', 'días')}${actual.vence ? ` el plazo de «${escHtml(actual.nombre)}»` : ' el plazo del proceso'}`
+        : `Atraso de CONAF en «${escHtml(actual.nombre)}»`;
       detalle = `A cargo de ${escHtml(actual.e.nombres || 'sin asignar')} (${escHtml(actual.oficina)}) desde el ${f(actual.e.fecha_inicio)}.`;
     } else if (sit === 'al_dia' && actual) {
       titulo = `En evaluación en CONAF: «${escHtml(actual.nombre)}»`;
@@ -326,6 +337,71 @@ window.Ficha = (() => {
     } catch (e) { /* sin fotos */ }
   }
 
+  // ─── Ajuste manual del estado (tramites/ajustes.py) ───────────────────────
+  async function ajustes(t) {
+    const cont = document.getElementById('fx-ajustes');
+    if (!cont) return;
+    let d;
+    try {
+      const r = await fetch(`/api/tramites/${t.id}/ajustes`);
+      d = await r.json();
+      if (!d.ok) return;
+    } catch (e) { return; }
+    if (!document.body.contains(cont)) return;
+    const hist = d.historial.map((a, i) => `<li class="fx-aj${i === 0 && a.situacion !== 'revertido' ? ' fx-aj--vigente' : ''}">
+        <div class="fx-aj-cab"><strong>${escHtml(a.nombre)}</strong>${i === 0 && a.situacion !== 'revertido' ? '<span class="fx-aj-vig">vigente</span>' : ''}
+          <span class="fx-nota" style="margin:0">desde ${f(a.fecha_efectiva)} · registrado por ${escHtml(a.autor || '–')} el ${f(a.creado_en)}</span></div>
+        <p>${escHtml(a.motivo)}</p>
+        ${a.adjuntos.length ? `<div class="fx-aj-adj">${a.adjuntos.map(x => `<a href="/api/ajustes/${a.id}/adjuntos/${x.n}">📎 ${escHtml(x.nombre)} <small>${Math.max(1, Math.round(x.tamano / 1024))} KB</small></a>`).join('')}</div>` : ''}
+      </li>`).join('');
+    const hoy = new Date().toLocaleDateString('sv');   // AAAA-MM-DD en hora local
+    const vigente = d.historial.length && d.historial[0].situacion !== 'revertido';
+    const opciones = Object.entries(d.situaciones).filter(([k]) => k !== 'revertido' || vigente);
+    cont.innerHTML = `<section class="fx-ajustes">
+      <div class="fx-docs-cab"><h4 style="margin:0">Estado real del permiso <small>ajustes registrados por CONAF</small></h4>
+        ${d.puede_ajustar ? '<button class="fx-btn" data-fx-aj-abrir>Ajustar estado</button>' : ''}</div>
+      ${hist ? `<ol class="fx-ajs">${hist}</ol>` : `<p class="fx-nota">Sin ajustes: la plataforma usa el estado de Cero Filas.${d.puede_ajustar ? ' Si no refleja la realidad (el solicitante desistió, se resolvió por otra vía, es un duplicado…), regístrelo aquí con su justificación.' : ''}</p>`}
+      ${d.puede_ajustar ? `<form class="fx-aj-form" hidden>
+        <label>Estado real<select name="situacion" required><option value="">Elija…</option>${opciones.map(([k, v]) => `<option value="${k}">${escHtml(v)}</option>`).join('')}</select></label>
+        <label>Desde (fecha en que ocurrió)<input type="date" name="fecha_efectiva" max="${hoy}" value="${hoy}" required></label>
+        <label class="fx-aj-ancho">Justificación <small>(obligatoria: qué ocurrió, cómo se supo y quién lo informó; mín. 30 caracteres)</small>
+          <textarea name="motivo" rows="4" required minlength="30" placeholder="Ej.: El 12-08 el titular informó por correo a la oficina regional que desiste del permiso por falta de financiamiento. No se registró en Cero Filas."></textarea></label>
+        <label class="fx-aj-ancho">Respaldos <small>(opcional: correos .eml o .msg, PDF, imágenes; hasta 5 archivos de 10 MB)</small>
+          <input type="file" name="archivos" multiple accept=".eml,.msg,.pdf,.png,.jpg,.jpeg,.txt,.doc,.docx"></label>
+        <p class="pt-error fx-aj-error" hidden></p>
+        <div class="fx-aj-ancho" style="display:flex;gap:8px"><button class="fx-btn fx-btn--pri" type="submit">Registrar ajuste</button>
+          <button class="fx-btn" type="button" data-fx-aj-cancelar>Cancelar</button></div>
+        <p class="fx-nota fx-aj-ancho">El ajuste queda en el historial con su autor y fecha (no se puede borrar) y se refleja en toda la plataforma. Cero Filas no se modifica.</p>
+      </form>` : ''}
+    </section>`;
+    const form = cont.querySelector('.fx-aj-form');
+    cont.addEventListener('click', e => {
+      if (e.target.closest('[data-fx-aj-abrir]')) { form.hidden = false; form.elements.situacion.focus(); }
+      if (e.target.closest('[data-fx-aj-cancelar]')) form.hidden = true;
+    });
+    form?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const err = form.querySelector('.fx-aj-error'), btn = form.querySelector('[type=submit]');
+      err.hidden = true;
+      if (form.elements.motivo.value.trim().length < 30) { err.textContent = 'La justificación debe tener al menos 30 caracteres.'; err.hidden = false; return; }
+      btn.disabled = true; btn.textContent = 'Registrando…';
+      try {
+        const r = await fetch(`/api/tramites/${t.id}/ajustes`, { method: 'POST', body: new FormData(form) });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || `Error ${r.status}`);
+        // se refleja de inmediato en el resto de la plataforma y se recarga la ficha
+        const x = STATE.tramites.find(z => z.id === t.id);
+        const fr = await (await fetch(`/api/tramites/${t.id}`)).json();
+        if (x && fr.ok) { if (fr.data.ajuste) x.ajuste = fr.data.ajuste; else delete x.ajuste; }
+        if (typeof renderDashboard === 'function' && STATE.tramites.length) renderDashboard();
+        openModal(t.id);
+      } catch (ex) {
+        err.textContent = ex.message; err.hidden = false;
+        btn.disabled = false; btn.textContent = 'Registrar ajuste';
+      }
+    });
+  }
+
   // ─── Armado ────────────────────────────────────────────────────────────────
   function html(t, piezas) {
     const et = etapas(t);
@@ -341,7 +417,7 @@ window.Ficha = (() => {
       ['territorio', 'Territorio', '', `${piezas.regiones || '<p class="fx-nota">El formulario no detalla regiones ni áreas.</p>'}
         <div class="fx-enlaces"><button class="fx-btn" data-fx-ir="cumplimiento">Ver los sitios que registró el titular</button>
         ${(t.regiones_list || []).length === 1 && window.PERFIL?.secciones?.some(x => x.startsWith('resumen')) ? `<button class="fx-btn" data-fx-territorio="${escHtml(t.regiones_list[0])}">Ver presión de permisos en la región</button>` : ''}</div>`],
-      ['seguimiento', 'Seguimiento CONAF', et.length, seguimiento(t, et)],
+      ['seguimiento', 'Seguimiento CONAF', et.length, `<div id="fx-ajustes"></div>${seguimiento(t, et)}`],
       ['documentos', 'Documentos', piezas.adjuntos.length + (piezas.nEntregados || 0), documentos(t, piezas)],
       ['cumplimiento', 'Cumplimiento del titular', '', cumplimiento(t, piezas)],
       ['relacionados', 'Relacionados', rel.n || '', rel.html],
@@ -415,6 +491,7 @@ window.Ficha = (() => {
       if (item && n) { item.className = 'fx-cum fx-cum--ok'; item.querySelector('.fx-cum-ico').textContent = '✓'; }
     });
     fotosDelTitular(t);
+    ajustes(t);
   }
 
   // Enlace directo: /?tramite=ID abre la ficha al terminar de cargar

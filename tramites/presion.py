@@ -142,8 +142,13 @@ def periodo_actividades(t, region=None):
 def situacion(t, region=None, hoy=None):
     """'ejecucion' | 'programado' | 'evaluacion' | None (terminado / rechazado / sin fechas)."""
     hoy = hoy or date.today()
+    ajuste = (t.get('ajuste') or {}).get('sit')
+    if ajuste in ('cerrado_admin', 'rechazado'):      # ajuste manual: desistido, anulado, rechazado…
+        return None
     if t.get('estado') == 'rechazado' or t.get('borrador'):
         return None
+    if ajuste == 'completado' and t.get('estado') == 'pendiente':
+        t = {**t, 'estado': 'completado'}
     if t.get('estado') == 'pendiente':
         return 'evaluacion'
     ini, fin = periodo_actividades(t, region)
@@ -334,7 +339,8 @@ def _tramites_recientes():
             if t['id'] not in vistos:
                 vistos.add(t['id'])
                 res.append(t)
-    return res
+    from .ajustes import aplicar
+    return aplicar(res)
 
 
 def _tipo(t):

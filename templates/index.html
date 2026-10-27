@@ -441,6 +441,8 @@
         <label>Región<select name="region"><option value="">Nacional (todas)</option></select></label>
       </div>
       <label class="usr-check"><input type="checkbox" name="solo_su_region" /> Solo puede ver los datos de su región</label>
+      <label>Áreas protegidas a cargo <small>(una por línea; vacío = todas las de su ámbito). Define qué permisos puede ajustar.</small>
+        <textarea name="areas" rows="3" placeholder="Parque Nacional Conguillío&#10;Reserva Nacional Malalcahuello"></textarea></label>
       <label class="usr-check"><input type="checkbox" name="activo" checked /> Cuenta activa</label>
 
       <fieldset>
@@ -452,7 +454,7 @@
         <div class="usr-checks">
           <label class="usr-check"><input type="checkbox" checked disabled /> Ver y consultar</label>
           <label class="usr-check"><input type="checkbox" name="perm_agregar" /> Agregar <small>(subir archivos entregados, crear y enviar correos)</small></label>
-          <label class="usr-check"><input type="checkbox" name="perm_editar" /> Editar <small>(actualizar datos desde CeroFilas y Drive)</small></label>
+          <label class="usr-check"><input type="checkbox" name="perm_editar" /> Editar <small>(actualizar datos, ver datos personales completos y ajustar el estado de los permisos de su región o áreas a cargo)</small></label>
           <label class="usr-check"><input type="checkbox" name="perm_borrar" /> Borrar <small>(eliminar registros)</small></label>
         </div>
       </fieldset>

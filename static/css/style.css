@@ -2219,3 +2219,23 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
 .fx-panel .modal-kv-item--full .value, .fx-motivo p, .fx-cum-cuerpo p { text-align: justify; hyphens: auto; }
 @media (max-width: 760px) { .fx-tarjeta.fx-media { grid-column: auto; } }
 .fx-tarjeta:not(.fx-media):not(.fx-larga) p { text-align: left; }
+
+/* Ficha: ajuste manual del estado del permiso */
+.fx-ajustes { border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; background: var(--surface2); }
+.fx-ajs { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.fx-aj { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.fx-aj--vigente { border-left: 4px solid #A39E93; }
+.fx-aj-cab { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.fx-aj-vig { font-size: 11px; font-weight: 700; text-transform: uppercase; background: #EDEAE2; color: #5F5A4E; border-radius: 99px; padding: 1px 8px; }
+.fx-aj p { font-size: 13.5px; line-height: 1.5; margin-top: 4px; text-align: justify; white-space: pre-line; }
+.fx-aj-adj { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.fx-aj-adj a { font-size: 12.5px; color: var(--em-700); font-weight: 600; text-decoration: none; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; }
+.fx-aj-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.fx-aj-form[hidden] { display: none; }
+.fx-aj-form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; }
+.fx-aj-form label small { font-weight: 400; color: var(--muted); }
+.fx-aj-form select, .fx-aj-form input, .fx-aj-form textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font: 13.5px 'DM Sans', sans-serif; background: var(--surface); }
+.fx-aj-ancho { grid-column: 1 / -1; }
+@media (max-width: 760px) { .fx-aj-form { grid-template-columns: 1fr; } }
+.fx-aj-error { grid-column: 1 / -1; background: #FDF0EE; border: 1px solid #F2C7C0; color: #9B2C1F; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+#usr-form textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font: 13.5px "DM Sans", sans-serif; }

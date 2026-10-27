@@ -12,6 +12,7 @@ const RES_ESTADOS = [
   { key: 'completado',         label: 'Completadas',                                color: '#347A17', grupo: 'resuelta' },
   { key: 'cierre_solicitante', label: 'Resueltas, falta cierre del solicitante',    color: '#8DBF6A', grupo: 'resuelta' },
   { key: 'rechazado',          label: 'Rechazadas',                                 color: '#6B4A8C', grupo: 'resuelta' },
+  { key: 'cerrado_admin',      label: 'Cerradas sin resolución (desistidas, anuladas)', color: '#A39E93', grupo: 'resuelta' },
   { key: 'espera_solicitante', label: 'Pendiente del solicitante',                  color: '#3F7CB8', grupo: 'solicitante' },
   { key: 'suspendido',         label: 'En suspensión',                              color: '#8A8F98', grupo: 'suspendido' },
   { key: 'al_dia',             label: 'En trámite CONAF, al día',                   color: '#D9A13B', grupo: 'conaf' },
