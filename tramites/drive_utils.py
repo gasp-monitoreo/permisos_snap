@@ -1,4 +1,5 @@
 """Google Drive integration — lista archivos de una carpeta Drive."""
+import re
 import os
 import time
 import threading
@@ -65,6 +66,14 @@ def _list_items(service, folder_id):
     return items
 
 
+# Archivos de sistema que se cuelan al copiar carpetas desde un Mac o Windows (no son entregas)
+_BASURA = re.compile(r'^(\._|\.DS_Store$|Thumbs\.db$|desktop\.ini$|~\$)', re.I)
+
+
+def es_basura(nombre):
+    return bool(_BASURA.match(nombre or ''))
+
+
 def _file_entry(f):
     ext = os.path.splitext(f['name'])[1].lower()
     if ext not in DRIVE_EXTENSIONS:
@@ -102,14 +111,14 @@ def build_index(service, folder_id):
             ids_data = {}
             for idf in id_fldrs:
                 archivos = [_file_entry(f) for f in _list_items(service, idf['id'])
-                            if f['mimeType'] != FOLDER]
+                            if f['mimeType'] != FOLDER and not es_basura(f['name'])]
                 archivos = [a for a in archivos if a]
                 if archivos:
                     ids_data[idf['name']] = archivos
             if ids_data:
                 result[inv['name']] = {'tipo': 'nested', 'ids': ids_data}
         else:
-            archivos = [_file_entry(f) for f in children if f['mimeType'] != FOLDER]
+            archivos = [_file_entry(f) for f in children if f['mimeType'] != FOLDER and not es_basura(f['name'])]
             archivos = [a for a in archivos if a]
             if archivos:
                 result[inv['name']] = {'tipo': 'flat', 'archivos': archivos}

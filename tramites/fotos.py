@@ -136,15 +136,18 @@ def _descargar(service, drive_id):
 
 
 def _documentos(index):
-    """Aplana el índice Drive → [(investigador, tramite_id|None, entry)]."""
+    """Aplana el índice Drive → [(investigador, tramite_id|None, entry)], sin archivos de sistema."""
+    from .drive_utils import es_basura
     for inv, v in index.items():
         if v.get('tipo') == 'nested':
             for tid, archivos in v['ids'].items():
                 for a in archivos:
-                    yield inv, tid, a
+                    if not es_basura(a.get('nombre')):
+                        yield inv, tid, a
         else:
             for a in v.get('archivos', []):
-                yield inv, None, a
+                if not es_basura(a.get('nombre')):
+                    yield inv, None, a
 
 
 def extraer(service, index, reprocesar=False, log=print):
