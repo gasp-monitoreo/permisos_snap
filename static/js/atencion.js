@@ -29,7 +29,9 @@ function _atnDiasAtraso(t, hoy) {
   return fechas.length ? Math.floor((hoy - Math.min(...fechas)) / ATN_DIA) : 0;
 }
 
+// Escala (porArea): false = país (agrupa por región) · 'area' = región (por área) · 'etapa' = área (por etapa)
 function _atnGrupos(t, porArea) {
+  if (porArea === 'etapa') return [t.etapa_actual?.tarea_nombre || 'Etapa en curso'];
   if (porArea) return t.areas_protegidas?.length ? t.areas_protegidas : ['Sin área indicada'];
   return t.regiones_list?.length ? t.regiones_list : ['Sin región indicada'];
 }
@@ -69,7 +71,8 @@ function _atnCalcular(ts, region) {
   L.solicitante.sort((a, b) => a.cierre - b.cierre || b.dias - a.dias);
   const semana = new Date(hoy - 7 * ATN_DIA);
   const delta = _atnAtrasadasEn(ts, hoy) - _atnAtrasadasEn(ts, semana);
-  return { L, cierre, suspendidas, largas, delta, region, porArea: !!region };
+  const dup = ts.filter(t => STATE.duplicados?.has(t.id));
+  return { L, cierre, suspendidas, largas, delta, region, dup, porArea: STATE.area ? 'etapa' : region ? 'area' : false };
 }
 
 function _atnTop(items, porArea, n = 3) {
@@ -84,7 +87,7 @@ function _atnTop(items, porArea, n = 3) {
 
 function _atnFrase(a) {
   const { L, region, porArea, delta, largas } = a;
-  const donde = region ? `En ${region}` : 'En todo el país';
+  const donde = (STATE.area ? `En ${escHtml(STATE.area)}` : region ? `En ${escHtml(region)}` : 'En todo el país') + (STATE.mio ? ' (a su cargo)' : '');
   const partes = [];
   const n = L.atraso.length;
   if (n) {
@@ -116,14 +119,15 @@ function _atnTarjeta(clave, clase, cifra, extra, cuerpo, boton) {
     <header><svg viewBox="0 0 24 24" aria-hidden="true">${_ATN_ICONOS[clave]}</svg><h3>${ATN_LISTAS[clave].titulo}</h3></header>
     <div class="atn-cifra"><strong>${cifra}</strong>${extra}</div>
     <div class="atn-cuerpo">${cuerpo}</div>
-    ${boton ? `<button class="atn-ver" data-atn-lista="${clave}">${boton} <span aria-hidden="true">→</span></button>` : ''}
+    ${boton ? `<button class="atn-ver" data-atn-lista="${clave}">${boton} <span aria-hidden="true">→</span></button>
+      <button class="atn-tabla" data-atn-tabla="${clave}">Trabajar en la tabla de permisos ↓</button>` : ''}
   </article>`;
 }
 
 function _atnTopHtml(items, clave, porArea) {
   return `<ul class="atn-top">${_atnTop(items, porArea).map(x => {
     const cod = !porArea ? _atnRegion(x.g)?.codigo : '';
-    return `<li><button data-atn-lista="${clave}" data-atn-grupo="${escHtml(x.g)}" title="${porArea ? 'Ver estas solicitudes' : 'Ver esta región'}">
+    return `<li><button data-atn-lista="${clave}" data-atn-grupo="${escHtml(x.g)}" title="${porArea === 'etapa' ? 'Ver estas solicitudes' : porArea ? 'Acercarse a esta área protegida' : 'Acercarse a esta región'}">
       <span>${cod ? `<span class="reg-cod">${cod}</span> ` : ''}${escHtml(x.g)}</span>
       <em>${x.n} · ${clave === 'atraso' ? 'máx.' : 'hasta'} ${x.max} d</em></button></li>`;
   }).join('')}</ul>`;
@@ -165,31 +169,38 @@ function renderAtencion(ts, region) {
     lineas ? `<ul class="atn-lineas">${lineas}</ul>` : '<p class="atn-ok">Ninguna espera al solicitante.</p>',
     L.solicitante.length ? (a.largas ? 'Ver a quién recordar' : 'Ver solicitudes') : '');
 
-  const fijo = window.PERFIL?.solo_su_region;
+  const fijo = window.PERFIL?.solo_su_region && !window.PERFIL?.superusuario;
   const ambito = region
-    ? `<span class="atn-ambito">${_atnRegion(region)?.codigo ? `<span class="reg-cod">${_atnRegion(region).codigo}</span> ` : ''}${escHtml(region)}${fijo ? '' : ' <button data-atn-pais title="Volver a todo el país" aria-label="Volver a todo el país">✕</button>'}</span>`
+    ? `<span class="atn-ambito">${_atnRegion(region)?.codigo ? `<span class="reg-cod">${_atnRegion(region).codigo}</span> ` : ''}${escHtml(region)}${fijo || STATE.area ? '' : ' <button data-atn-pais title="Volver a todo el país" aria-label="Volver a todo el país">✕</button>'}
+        ${STATE.area ? `<span class="atn-sep">›</span>${escHtml(STATE.area)} <button data-atn-region title="Volver a toda la región" aria-label="Volver a toda la región">✕</button>` : ''}</span>`
     : '<span class="atn-ambito">Todo el país</span>';
+  const dupGrupos = a.dup.length;
+  const avisoDup = dupGrupos ? `<button class="atn-dup" data-atn-dup>⚠ ${_atnPlural(dupGrupos, 'permiso podría ser un duplicado regional', 'permisos podrían ser duplicados regionales')}
+    (mismo titular y proyecto en otra región): conviene consolidarlos. <b>Revisar →</b></button>` : '';
   const fecha = new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
 
   root.innerHTML = `
     <div class="atn-head">
       <div><span class="atn-eyebrow">Requiere atención · ${fecha}</span>${ambito}</div>
-      <span class="atn-escala">${porArea ? 'Agrupado por área protegida' : 'Agrupado por región · clic en una región para acercarse'}</span>
+      <span class="atn-escala">${porArea === 'etapa' ? 'Agrupado por etapa en curso' : porArea ? 'Agrupado por área protegida · clic en un área para acercarse' : 'Agrupado por región · clic en una región para acercarse'}</span>
     </div>
     <p class="atn-frase">${_atnFrase(a)}</p>
-    <div class="atn-cards">${t1}${t2}${t3}</div>`;
+    <div class="atn-cards">${t1}${t2}${t3}</div>
+    ${avisoDup}`;
 
   if (!root.dataset.listo) {
     root.addEventListener('click', e => {
-      if (e.target.closest('[data-atn-pais]')) { setRegion(STATE.region); return; }
+      if (e.target.closest('[data-atn-pais]')) { setAmbito(null); return; }
+      if (e.target.closest('[data-atn-region]')) { setArea(null); return; }
+      if (e.target.closest('[data-atn-dup]')) { _atnAbrirDuplicados(); return; }
+      const tabla = e.target.closest('[data-atn-tabla]');
+      if (tabla) { window.filtrarTablaPermisos?.(tabla.dataset.atnTabla); return; }
       const b = e.target.closest('[data-atn-lista]');
       if (!b) return;
       const grupo = b.dataset.atnGrupo;
-      if (grupo && !_atn.porArea && _atnRegion(grupo) && !window.PERFIL?.solo_su_region) {
-        setRegion(grupo);   // acercarse: de país a región
-        document.getElementById('atencion').scrollIntoView({ block: 'start', behavior: 'smooth' });
-        return;
-      }
+      const subir = () => document.getElementById('filtro-regiones')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      if (grupo && !_atn.porArea && _atnRegion(grupo) && !window.PERFIL?.solo_su_region) { setAmbito(grupo); subir(); return; }   // país → región
+      if (grupo && _atn.porArea === 'area' && grupo !== 'Sin área indicada') { setArea(grupo); subir(); return; }                // región → área
       _atnAbrirPanel(b.dataset.atnLista, grupo);
     });
     root.dataset.listo = '1';
@@ -225,6 +236,23 @@ function _atnAbrirPanel(clave, grupo) {
   panel.querySelector('.atn-cerrar').focus();
 }
 
+function _atnAbrirDuplicados() {
+  const panel = document.getElementById('atn-panel');
+  if (!panel || !_atn) return;
+  document.getElementById('atn-panel-tit').textContent = 'Posibles duplicados regionales';
+  document.getElementById('atn-panel-sub').textContent = 'El mismo titular pidió el mismo proyecto en distintas regiones. Corresponde consolidarlos en una sola solicitud.';
+  document.getElementById('atn-panel-lista').innerHTML = _atn.dup.map(t => {
+    const otros = STATE.duplicados.get(t.id) || [];
+    return `<button class="atn-fila" data-id="${t.id}"><span class="atn-fila-txt">
+      <strong>#${t.id} · ${escHtml(t.nombre_solicitante || '')}</strong>
+      <small>${escHtml((t.regiones_list || []).join(', '))} · también: ${otros.map(o => `#${o.id} (${escHtml((o.regiones_list || []).join(', '))})`).join(', ')}</small>
+    </span><span class="atn-fila-dias">${otros.length + 1} solicitudes</span></button>`;
+  }).join('');
+  panel.hidden = false;
+  document.getElementById('atn-velo').hidden = false;
+  requestAnimationFrame(() => panel.classList.add('abierto'));
+}
+
 function _atnCerrarPanel() {
   const panel = document.getElementById('atn-panel');
   if (!panel || panel.hidden) return;
@@ -251,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // «Desempeño del período» recuerda si quedó abierto
   const des = document.getElementById('desempeno');
   if (des) {
-    try { des.open = localStorage.getItem('desempeno-abierto') === '1'; } catch (e) {}
+    try { des.open = localStorage.getItem('desempeno-abierto') !== '0'; } catch (e) { des.open = true; }   // abierto por defecto
     des.addEventListener('toggle', () => { try { localStorage.setItem('desempeno-abierto', des.open ? '1' : '0'); } catch (e) {} });
   }
 });

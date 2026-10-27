@@ -42,8 +42,10 @@ function _terrMigas() {
   const fijo = window.PERFIL?.solo_su_region;
   const m = [];
   if (!fijo) m.push(_terr.region || _terr.area ? '<button data-terr-ir="pais">Todo el país</button>' : '<span>Todo el país</span>');
-  if (_terr.region) m.push(_terr.area ? `<button data-terr-ir="region">${_esc(_terr.region)}</button>` : `<span>${_esc(_terr.region)}</span>`);
+  const conArea = _terr.area || _terr.areaNombre;
+  if (_terr.region) m.push(conArea ? `<button data-terr-ir="region">${_esc(_terr.region)}</button>` : `<span>${_esc(_terr.region)}</span>`);
   if (_terr.area) m.push(`<span>${_esc(_terr.area.area)}</span>`);
+  else if (_terr.areaNombre) m.push(`<span>${_esc(_terr.areaNombre)} <small>(sin permisos activos)</small></span>`);
   return `<nav class="terr-migas" aria-label="Escala">${m.join('<i aria-hidden="true">›</i>')}</nav>`;
 }
 
@@ -210,42 +212,41 @@ async function _terrPintar() {
 }
 
 // ─── Navegación entre escalas ─────────────────────────────────────────────────
+// El área elegida en el mapa es el ámbito de TODO el Resumen (app.js: setAmbito), no solo del mapa
 function _terrIrArea(nombre, region) {
-  if (!_terr.region && region) {
-    _terr.pendienteArea = nombre;
-    setRegion(region);           // re-dibuja el Resumen completo en la región; el área se abre al cargar
-    return;
-  }
-  _terr.area = _terr.datos.areas.find(a => a.area === nombre) || null;
-  _terrPintar();
-  document.getElementById('terr-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  setAmbito(region || STATE.region, nombre);
+  document.getElementById('filtro-regiones')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
-async function renderTerritorio(region, tipo) {
+const _terrBuscarArea = (d, nombre) => !nombre || !d || d.escala !== 'region' ? null
+  : d.areas.find(a => a.area === nombre) || d.areas.find(a => areaCoincide(a.area, nombre)) || null;
+
+async function renderTerritorio(region, tipo, area = null) {
   const host = document.getElementById('territorio');
   if (!host) return;
   const cambio = region !== _terr.region || tipo !== _terr.tipo;
-  _terr = { ..._terr, region, tipo, area: cambio ? null : _terr.area };
+  _terr = { ..._terr, region, tipo, areaNombre: area };
   if (!host.querySelector('#terr-card')) {
     host.innerHTML = `<section class="pano-card terr-card" id="terr-card">
       <header class="pano-head"><div><h3>Dónde se concentran los permisos</h3>
-        <p>Permisos activos: en ejecución hoy, programados y en evaluación (últimos 3 años)</p></div>
+        <p>Permisos activos: en ejecución hoy, programados y en evaluación (últimos 3 años) · clic en una región o área para acercarse</p></div>
         <div class="terr-migas-host"></div></header>
       <div class="terr-cuerpo"><div class="terr-mapa" role="region" aria-label="Mapa de permisos activos"></div><div class="terr-lado"></div></div>
     </section>`;
     host.addEventListener('click', _terrClic);
   }
-  if (!cambio && _terr.datos) return;
+  if (!cambio && _terr.datos) {            // solo cambió el área: se acerca sin volver a consultar
+    _terr.area = _terrBuscarArea(_terr.datos, area);
+    _terrPintar();
+    return;
+  }
   host.querySelector('.terr-lado').innerHTML = '<div class="empty-msg">⏳ Calculando… (la primera vez puede tardar hasta un minuto)</div>';
   let d;
   try { d = await _terrDatos(tipo, region); }
   catch (e) { host.querySelector('.terr-lado').innerHTML = `<div class="empty-msg">No se pudo calcular (${_esc(e.message)}).</div>`; return; }
   if (_terr.region !== region || _terr.tipo !== tipo) return;   // cambió mientras cargaba
   _terr.datos = d;
-  if (_terr.pendienteArea) {
-    _terr.area = d.areas.find(a => a.area === _terr.pendienteArea) || null;
-    _terr.pendienteArea = null;
-  }
+  _terr.area = _terrBuscarArea(d, _terr.areaNombre);
   _terrPintar();
 }
 
@@ -259,8 +260,8 @@ function _terrClic(e) {
   }
   const ir = e.target.closest('[data-terr-ir]');
   if (ir) {
-    if (ir.dataset.terrIr === 'pais') { _terr.area = null; setRegion(STATE.region); }
-    else { _terr.area = null; _terrPintar(); }
+    if (ir.dataset.terrIr === 'pais') setAmbito(null);
+    else setArea(null);
     return;
   }
   const area = e.target.closest('[data-terr-area]');

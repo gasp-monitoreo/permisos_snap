@@ -306,7 +306,34 @@ function _resRegiones(ts, regionActiva) {
 const RES_TRAMOS = [[0, 15, '≤ 15'], [16, 30, '16–30'], [31, 60, '31–60'], [61, 90, '61–90'], [91, 180, '91–180'], [181, Infinity, '> 180']];
 const RES_FILTRO = { sit: new Set(), periodo: new Set(), tramo: new Set(), oficina: new Set() };
 const RES_ETIQ = {};                 // 'dim|valor' → texto del chip
-let _resUltimo = null, _resTablaPag = 1, _resOrden = { col: 'ingreso', dir: -1 };
+let _resUltimo = null, _resTablaPag = 1, _resOrden = { col: 'ingreso', dir: -1 }, _resVista = 'todos';
+const RES_VISTAS = {
+  todos:      ['Todos', () => true],
+  pendientes: ['Pendientes', t => t.estado === 'pendiente' && !t.ajuste],
+  vence7:     ['Vencen en 7 días', t => {
+    if (_estadoRes(t) !== 'al_dia') return false;
+    const fv = fechaVencimientoEfectiva(t);
+    const d = fv ? (new Date(fv) - Date.now()) / 86400000 : null;
+    return d !== null && d >= 0 && d <= 7;
+  }],
+  recientes:  ['Ingresados en 3 meses', t => t.fecha_inicio && (Date.now() - new Date(t.fecha_inicio)) / 86400000 <= 92],
+};
+// el usuario puede ajustar el estado (aproximación; el servidor decide: tramites/ajustes.py)
+const _resPuedeAjustar = t => !!window.PERFIL?.superusuario || (!!window.PERFIL?.permisos?.editar
+  && (!window.PERFIL.region || (t.regiones_list || []).includes(window.PERFIL.region)));
+
+// Desde el Centro de atención: «Trabajar en la tabla de permisos»
+window.filtrarTablaPermisos = clave => {
+  _resLimpiarFiltros();
+  _resVista = 'todos';
+  if (clave === 'atraso') RES_FILTRO.sit.add('vencido');
+  else if (clave === 'solicitante') { RES_FILTRO.sit.add('espera_solicitante'); RES_FILTRO.sit.add('cierre_solicitante'); }
+  else if (clave === 'proximos') _resVista = 'vence7';
+  const des = document.getElementById('desempeno');
+  if (des) des.open = true;
+  _resRepintar();
+  document.getElementById('res-tabla')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
 
 function _resMarca(dim, valor) {
   const f = RES_FILTRO[dim];
@@ -332,7 +359,19 @@ function _resLimpiarFiltros() {
   _resTablaPag = 1;
 }
 
-function _resTabla(lista, total) {
+// Área(s) del permiso; si hay un área elegida en el ámbito, va primero
+function _resLugar(t) {
+  const areas = [...(t.areas_protegidas || [])];
+  if (STATE.area) areas.sort((x, y) => areaCoincide(y, STATE.area) - areaCoincide(x, STATE.area));
+  const lista = areas.length ? areas : t.regiones_list || [];
+  return lista.slice(0, 2).join(', ') + (lista.length > 2 ? ` +${lista.length - 2}` : '') || '–';
+}
+
+function _resTabla(listaFiltrada, total) {
+  const conteo = Object.fromEntries(Object.entries(RES_VISTAS).map(([k, [, fn]]) => [k, listaFiltrada.filter(fn).length]));
+  const lista = listaFiltrada.filter(RES_VISTAS[_resVista][1]);
+  const vistas = `<div class="res-vistas" role="group" aria-label="Vista de la tabla">${Object.entries(RES_VISTAS).map(([k, [n]]) =>
+    `<button data-res-vista="${k}" aria-pressed="${k === _resVista}">${n} <b>${conteo[k]}</b></button>`).join('')}</div>`;
   const chips = Object.entries(RES_FILTRO).flatMap(([dim, f]) => [...f].map(v => {
     const txt = dim === 'sit' ? _LABEL[v] : RES_ETIQ[`${dim}|${v}`] || v;
     return `<button class="res-chip" data-fil="${dim}|${_esc(v)}">${_esc(txt)} <span aria-hidden="true">✕</span></button>`;
@@ -351,21 +390,25 @@ function _resTabla(lista, total) {
   const vis = filas.slice(0, _resTablaPag * 25);
   const th = (col, txt) => `<th><button class="res-th" data-orden="${col}" aria-sort="${_resOrden.col === col ? (_resOrden.dir > 0 ? 'ascending' : 'descending') : 'none'}">${txt}${_resOrden.col === col ? (_resOrden.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`;
   const puedeExportar = (window.PERFIL?.secciones || []).includes('exportar');
+  const ambito = STATE.area || STATE.region || 'todo el país';
   return `<section class="pano-card res-tabla-card" id="res-tabla">
-    <header class="pano-head"><div><h3>Permisos del período</h3>
-      <p>${chips ? `${_fmt(lista.length)} de ${_fmt(total)} permisos con los filtros elegidos en los gráficos` : `${_fmt(total)} permisos · haga clic en cualquier gráfico de arriba para filtrar esta tabla`}</p></div>
+    <header class="pano-head"><div><h3>Permisos · ${_esc(ambito)}${STATE.mio ? ' · a mi cargo' : ''}</h3>
+      <p>${_fmt(lista.length)} de ${_fmt(total)} permisos del ámbito${chips ? ' con los filtros elegidos en los gráficos' : ' · los gráficos de arriba también filtran esta tabla'}</p></div>
       ${puedeExportar && lista.length ? `<div class="res-tabla-acc"><button class="pano-vista" data-res-exp="excel">Exportar a Excel</button><button class="pano-vista" data-res-exp="zip">Resoluciones (ZIP)</button></div>` : ''}
     </header>
+    ${vistas}
     ${chips ? `<div class="res-chips">${chips}<button class="res-limpiar" data-res-limpiar>Limpiar</button></div>` : ''}
     ${lista.length ? `<div class="table-wrapper"><table class="pano-table res-tabla">
-      <thead><tr>${th('id', 'ID')}${th('sol', 'Solicitante')}${th('titulo', 'Proyecto')}<th>Área / región</th>${th('sit', 'Situación')}${th('ingreso', 'Ingreso')}${th('dias', 'Días')}</tr></thead>
+      <thead><tr>${th('id', 'ID')}${th('sol', 'Solicitante')}${th('titulo', 'Proyecto')}<th>Área / región</th>${th('sit', 'Situación')}${th('ingreso', 'Ingreso')}${th('dias', 'Días')}<th>Acciones</th></tr></thead>
       <tbody>${vis.map(f => `<tr data-abrir="${f.t.id}" tabindex="0">
         <td class="res-td-id">#${f.t.id}</td><td>${_esc(f.sol || '–')}</td>
         <td class="res-td-tit" title="${_esc(f.titulo)}">${_esc(f.titulo || '–')}</td>
-        <td>${_esc((f.t.areas_protegidas?.length ? f.t.areas_protegidas : f.t.regiones_list || []).slice(0, 2).join(', ') || '–')}</td>
+        <td>${_esc(_resLugar(f.t))}</td>
         <td><span class="res-sit"><i style="background:${_COLOR[f.sit]}"></i>${_esc(_LABEL[f.sit])}</span></td>
         <td>${f.ingreso ? formatDate(f.ingreso) : '–'}</td>
-        <td class="num" title="${_resueltaConaf(f.t) ? 'Días que tardó CONAF en resolver' : 'Días en la etapa actual'}">${f.dias ?? '–'}</td></tr>`).join('')}</tbody>
+        <td class="num" title="${_resueltaConaf(f.t) ? 'Días que tardó CONAF en resolver' : 'Días en la etapa actual'}">${f.dias ?? '–'}</td>
+        <td class="res-acc"><a href="/api/tramites/${f.t.id}/informe.pdf" title="Informe PDF del permiso" aria-label="Informe PDF">PDF</a>${_resPuedeAjustar(f.t)
+          ? `<button data-res-ajustar="${f.t.id}" title="Registrar el estado real (desistido, resuelto por otra vía…)">Ajustar</button>` : ''}</td></tr>`).join('')}</tbody>
     </table></div>
     ${filas.length > vis.length ? `<button class="res-ver-mas" data-res-mas>Ver ${Math.min(25, filas.length - vis.length)} más de ${_fmt(filas.length - vis.length)}</button>` : ''}`
     : '<div class="empty-msg">Ningún permiso cumple todos los filtros. Quite alguno.</div>'}
@@ -375,12 +418,17 @@ function _resTabla(lista, total) {
 function _resClic(e) {
   const root = e.currentTarget;
   const abrir = e.target.closest('tr[data-abrir]');
-  if (abrir) return openModal(Number(abrir.dataset.abrir));
+  if (abrir && !e.target.closest('.res-acc')) return openModal(Number(abrir.dataset.abrir));
   const orden = e.target.closest('[data-orden]');
   if (orden) {
     _resOrden = { col: orden.dataset.orden, dir: _resOrden.col === orden.dataset.orden ? -_resOrden.dir : 1 };
     return _resRepintar();
   }
+  if (e.target.closest('.res-acc a')) return;                      // descarga del informe: sin abrir la ficha
+  const aj = e.target.closest('[data-res-ajustar]');
+  if (aj) { window.Ficha?.abrir(Number(aj.dataset.resAjustar), { tab: 'seguimiento', ajustar: true }); return; }
+  const vista = e.target.closest('[data-res-vista]');
+  if (vista) { _resVista = vista.dataset.resVista; _resTablaPag = 1; return _resRepintar(); }
   if (e.target.closest('[data-res-mas]')) { _resTablaPag++; return _resRepintar(); }
   if (e.target.closest('[data-res-limpiar]')) { _resLimpiarFiltros(); return _resRepintar(); }
   const exp = e.target.closest('[data-res-exp]');
@@ -409,6 +457,44 @@ function _resRepintar() {
   if (_resUltimo) renderResumenVisual(..._resUltimo, true);
 }
 
+// 5b) Áreas protegidas de la región (escala región): mismas columnas que la matriz de regiones
+function _resAreas(ts, region) {
+  const porArea = new Map();
+  ts.forEach(t => (t.areas_protegidas?.length ? t.areas_protegidas : ['Sin área indicada']).forEach(a => {
+    if (!porArea.has(a)) porArea.set(a, []);
+    porArea.get(a).push(t);
+  }));
+  const filas = [...porArea.entries()].map(([nombre, r]) => {
+    const sit = r.map(_estadoRes);
+    const cuenta = (...ks) => sit.filter(x => ks.includes(x)).length;
+    return { nombre, n: r.length, tram: cuenta('al_dia', 'vencido'), venc: cuenta('vencido'),
+      solic: cuenta('espera_solicitante', 'cierre_solicitante'), susp: cuenta('suspendido'),
+      med: _mediana(r.filter(_resueltaConaf).map(calcularDias).filter(d => d !== null)) };
+  }).sort((a, b) => b.venc - a.venc || b.n - a.n);
+  if (!filas.length) return '';
+  const maxN = Math.max(...filas.map(f => f.n), 1);
+  const maxMed = Math.max(...filas.map(f => f.med || 0), 1);
+  const nivel = m => m === null ? 0 : Math.min(5, 1 + Math.floor(m / maxMed * 4.99));
+  const cab = `<div class="res-reg res-reg-head res-area-head"><span></span><span>Solicitudes</span><span>En CONAF</span><span>Atraso CONAF</span><span>Del solicitante</span><span>Suspendidas</span><span>Mediana resolución</span></div>`;
+  const html = filas.slice(0, 25).map(f => {
+    const tip = `<strong>${_esc(f.nombre)}</strong><br>${f.n} solicitudes · ${f.tram} en trámite CONAF · ${f.venc} con atraso<br>${f.solic} del solicitante · ${f.susp} en suspensión<br><small>Clic para acercarse a esta área</small>`;
+    return `<div class="res-reg res-area" data-tip="${_esc(tip)}" ${f.nombre === 'Sin área indicada' ? '' : `data-area="${_esc(f.nombre)}" tabindex="0" role="button"`}>
+      <span class="pano-reg-nom">${_esc(f.nombre)}</span>
+      <span class="res-reg-bar"><span style="width:${f.n / maxN * 100}%"></span><em>${f.n}</em></span>
+      <span class="res-reg-num">${f.tram || '·'}</span>
+      <span class="res-reg-num ${f.venc ? 'venc' : ''}">${f.venc || '·'}</span>
+      <span class="res-reg-num ${f.solic ? 'solic' : ''}">${f.solic || '·'}</span>
+      <span class="res-reg-num ${f.susp ? 'susp' : ''}">${f.susp || '·'}</span>
+      <span class="res-reg-med n${nivel(f.med)}">${f.med === null ? '–' : f.med + ' d'}</span>
+    </div>`;
+  }).join('');
+  const cuerpo = `<div class="res-regs">${cab}${html}</div>
+    <p class="pano-nota">${filas.length > 25 ? `Se muestran 25 de ${filas.length} áreas. ` : ''}Ordenadas por atraso de CONAF. Un permiso puede abarcar varias áreas. Clic en un área para acercar todo el panel a ella.</p>`;
+  const tabla = _tablaHtml(['Área protegida', 'Solicitudes', 'En trámite CONAF', 'Atraso CONAF', 'Pendiente del solicitante', 'En suspensión', 'Mediana resolución (d)'],
+    filas.map(f => [f.nombre, f.n, f.tram, f.venc, f.solic, f.susp, f.med ?? '–']));
+  return _card('res-areas', `Áreas protegidas de ${_esc(region)}`, 'Volumen, carga pendiente y velocidad de resolución por área', cuerpo, tabla);
+}
+
 // ─── Entrada ──────────────────────────────────────────────────────────────────
 // ts: trámites del tipo ya filtrados por región · tsTipo: todas las regiones (para la matriz)
 function renderResumenVisual(ts, tipo, tsTipo = ts, region = null, repintado = false) {
@@ -418,7 +504,7 @@ function renderResumenVisual(ts, tipo, tsTipo = ts, region = null, repintado = f
   const hasta = parseInt(document.getElementById('rango-hasta').value, 10);
   const nombreTipo = tipo === 'film' ? 'Filmación y fotografía' : 'Investigación';
   // un cambio de región, tipo o rango reinicia los filtros de los gráficos
-  const firma = `${tipo}|${region}|${desde}|${hasta}`;
+  const firma = `${tipo}|${region}|${STATE.area}|${STATE.mio}|${desde}|${hasta}`;
   if (!repintado && root.dataset.firma !== firma) { _resLimpiarFiltros(); root.dataset.firma = firma; }
   _resUltimo = [ts, tipo, tsTipo, region];
   const anios = hasta - desde + 1;
@@ -429,12 +515,12 @@ function renderResumenVisual(ts, tipo, tsTipo = ts, region = null, repintado = f
   const claves = new Map(ts.map(t => [t, _resClaves(t, ctx)]));
   const sin = dim => ts.filter(t => _resPasa(claves.get(t), dim));
   const filtrados = sin(null);
-  root.dataset.ids = JSON.stringify(filtrados.map(t => t.id));
+  root.dataset.ids = JSON.stringify(filtrados.filter(RES_VISTAS[_resVista][1]).map(t => t.id));
   const scrollY = window.scrollY;
   root.innerHTML = `
     ${_resEstado(sin('sit'), nombreTipo, region)}
     <div class="pano-grid">${_resIngresos(sin('periodo'), desde, hasta)}${_resTiempos(sin('tramo'))}</div>
-    <div class="pano-grid res-grid-b">${_resBandeja(sin('oficina'))}${_resRegiones(tsTipo, region)}</div>
+    <div class="pano-grid res-grid-b${STATE.area ? ' res-grid-uno' : ''}">${_resBandeja(sin('oficina'))}${!region ? _resRegiones(tsTipo, null) : STATE.area ? '' : _resAreas(ts, region)}</div>
     ${_resTabla(filtrados, ts.length)}`;
   if (repintado) window.scrollTo({ top: scrollY });
   if (!root.dataset.listo) {
@@ -449,7 +535,9 @@ function renderResumenVisual(ts, tipo, tsTipo = ts, region = null, repintado = f
     // Clic (o Enter) en una fila de la matriz regional = mismo filtro que los botones
     const elegir = e => {
       const fila = e.target.closest('.res-reg[data-region]');
-      if (fila) setRegion(fila.dataset.region);
+      if (fila) return setRegion(fila.dataset.region);
+      const area = e.target.closest('.res-reg[data-area]');
+      if (area) { setArea(area.dataset.area); document.getElementById('filtro-regiones')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
     };
     root.addEventListener('click', elegir);
     root.addEventListener('keydown', e => { if (e.key === 'Enter') elegir(e); });

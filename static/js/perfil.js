@@ -11,7 +11,8 @@
     STATE.dashFilter = 'film';
   }
   // Región: los encargados regionales parten en su región (fija si solo_su_region)
-  if (P.region && !P.superusuario) STATE.region = P.region;
+  // (un enlace con ?region=… manda, salvo que el perfil esté fijo en su región)
+  if (P.region && !P.superusuario && (P.solo_su_region || !new URLSearchParams(location.search).get('region'))) STATE.region = P.region;
 
   document.addEventListener('DOMContentLoaded', () => {
     // Enviar correos requiere permiso de agregar

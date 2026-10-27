@@ -178,20 +178,20 @@
 
   <!-- ── TAB: DASHBOARD ── -->
   <section id="tab-dashboard" class="tab-content">
-    <div class="hero" data-hero="1">
+    <div class="hero hero--short" data-hero="1">
       <div class="hero-body">
         <span class="hero-eyebrow" data-tipo-text="Investigación|Filmación y Fotografía">Investigación</span>
         <h2 class="hero-title">Panel de control</h2>
-        <p class="hero-sub" data-tipo-text="Lo que requiere atención hoy y, más abajo, el desempeño del período.|Lo que requiere atención hoy y, más abajo, el desempeño del período.">Lo que requiere atención hoy y, más abajo, el desempeño del período.</p>
+        <p class="hero-sub">Elija el ámbito (región y área protegida): todo el panel se ajusta a él.</p>
       </div>
       <div class="hero-credit"></div>
     </div>
 
+    <!-- Ámbito: región → área protegida (+ a mi cargo). Fija arriba; filtra todo el Resumen -->
+    <div id="filtro-regiones" class="amb-barra" role="search" aria-label="Ámbito del panel"></div>
+
     <!-- Centro de atención: lo que requiere acción hoy (static/js/atencion.js) -->
     <section id="atencion" class="atn" aria-label="Requiere atención"></section>
-
-    <!-- Filtro por región (cambia la escala: país → región → área protegida) -->
-    <div id="filtro-regiones" class="reg-filtro"></div>
 
     <!-- Vista territorial: país → región → área protegida (static/js/territorio.js) -->
     <div id="territorio" class="territorio"></div>
@@ -234,21 +234,6 @@
       <div id="resumen-visual" class="panorama"></div>
     </details>
 
-    <!-- Últimos trámites -->
-    <div class="section-card">
-      <div class="section-card-title">🕐 Trámites Recientes</div>
-      <div id="tabla-recientes" class="table-wrapper">
-        <div class="empty-msg">Cargando…</div>
-      </div>
-    </div>
-
-    <!-- Duplicados regionales -->
-    <div class="section-card" id="seccion-duplicados" style="display:none">
-      <div class="section-card-title" style="background:#7D4E00;color:#FFF3CD">
-        ⚠️ Posibles Duplicados Regionales
-      </div>
-      <div id="alerta-duplicados" class="table-wrapper"></div>
-    </div>
   </section>
 
   <!-- ── TAB: BÚSQUEDA ── -->

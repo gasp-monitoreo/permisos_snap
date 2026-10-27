@@ -40,12 +40,12 @@ window.Recorrido = (() => {
         texto: 'Arriba está lo que pide acción hoy: solicitudes atrasadas en CONAF, las que vencen en los próximos 7 días y las que esperan respuesta del solicitante. La frase de arriba resume la situación.' },
       { sel: '#atencion .atn-card', antes: ir('dashboard', tipoResumen), titulo: 'Detalle a pedido',
         texto: 'Pulse el botón de una tarjeta para ver la lista en un panel lateral; desde ahí abre cada trámite. Si pulsa una región, la vista se acerca a esa región y agrupa por área protegida.' },
-      { sel: '#filtro-regiones', antes: ir('dashboard', tipoResumen), titulo: 'Filtrar por región',
+      { sel: '#filtro-regiones', antes: ir('dashboard', tipoResumen), titulo: 'El ámbito: región y área protegida',
         texto: P.solo_su_region && P.region
-          ? `Su perfil muestra solo la región de ${P.region}. Por eso este filtro aparece fijo.`
-          : 'Pulse una región para acercarse: las tarjetas pasan a agrupar por área protegida y el mapa territorial muestra sus áreas.' },
+          ? `Su perfil está fijo en ${P.region}. Elija un área protegida para que todo el panel muestre solo esa área. «A mi cargo» deja solo los permisos cuya etapa actual está asignada a usted.`
+          : 'Elija una región y, si quiere, un área protegida: TODO el panel (tarjetas, mapa, gráficos y tabla) se ajusta a ese ámbito. «A mi cargo» deja solo los permisos cuya etapa actual está asignada a usted.' },
       { sel: '#terr-card', antes: ir('dashboard', tipoResumen), titulo: 'Dónde se concentran los permisos',
-        texto: 'El mapa muestra los permisos activos en cada área protegida. Pulse una burbuja o un área para acercarse: verá cada permiso en el mapa, el calendario de actividades que coinciden y si los sitios de distintos permisos se superponen.' },
+        texto: 'El mapa también cambia el ámbito: pulse una región o un área protegida para acercar todo el panel. Dentro de un área verá el calendario de actividades y si los sitios de distintos permisos se superponen.' },
       { sel: '#desempeno', antes: () => { ir('dashboard', tipoResumen)(); const d = document.getElementById('desempeno'); if (d) d.open = true; }, titulo: 'Desempeño del período',
         texto: 'Las cifras y gráficos (ingresos, tiempos de resolución, pendientes por oficina y regiones) quedan aquí, plegados para no competir con lo urgente. Ábralos cuando necesite el panorama completo.' });
     if (secs.includes('busqueda')) L.push(

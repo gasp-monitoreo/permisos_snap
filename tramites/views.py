@@ -24,6 +24,7 @@ def index(request):
     import json
     from .usuarios import perfil_de
     perfil = perfil_de(request.user).como_dict()
+    perfil['email'] = (request.user.email or request.user.username or '').lower()   # filtro «a mi cargo»
     # el aviso del tutorial aparece una vez por inicio de sesión (no en cada recarga)
     ofrecer = request.session.pop('ofrecer_tutorial', False) and perfil['ver_tutorial']
     return render(request, 'index.html', {'perfil': perfil, 'perfil_json': json.dumps(perfil),

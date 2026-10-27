@@ -14,6 +14,7 @@
    ═══════════════════════════════════════════════ */
 'use strict';
 window.Ficha = (() => {
+  let pendiente = null;   // { tab, ajustar } al abrir desde la tabla de permisos
   const DIA = 86400000;
   const RESOLUCION = /^(autorizacion|autorizacion_firmada|resolucion|resolucion_aprobacion|documento_aprobacion)$/i;
   const esConaf = email => /@conaf\.(gob\.)?cl$/i.test((email || '').trim());
@@ -375,6 +376,8 @@ window.Ficha = (() => {
       </form>` : ''}
     </section>`;
     const form = cont.querySelector('.fx-aj-form');
+    if (pendiente?.ajustar && form) { form.hidden = false; form.elements.situacion.focus(); }
+    pendiente = null;
     cont.addEventListener('click', e => {
       if (e.target.closest('[data-fx-aj-abrir]')) { form.hidden = false; form.elements.situacion.focus(); }
       if (e.target.closest('[data-fx-aj-cancelar]')) form.hidden = true;
@@ -484,6 +487,7 @@ window.Ficha = (() => {
         el.hidden = q && !el.textContent.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes(q);
       });
     });
+    if (pendiente?.tab) irA(pendiente.tab);
     window.RegistroGeo?.montar(t, document.getElementById('fx-registro'), n => {
       const p = document.getElementById('fx-pend-registro');
       if (p && !n) p.textContent = ' Falta el registro geográfico del titular (puntos, transectos o parcelas).';
@@ -503,5 +507,7 @@ window.Ficha = (() => {
     openModal(Number(id));
   });
 
-  return { html, activar };
+  function abrir(id, opciones) { pendiente = opciones || null; openModal(id); }
+
+  return { html, activar, abrir };
 })();

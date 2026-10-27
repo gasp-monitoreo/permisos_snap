@@ -30,9 +30,18 @@ const STATE = {
   fromCache: false,
   dashFilter: 'inv',         // 'all' | 'inv' | 'film' — sigue a STATE.tipo
   tipo: 'inv',               // sección activa del menú: 'inv' | 'film'
-  region: null,              // filtro de región del Resumen (nombre en REGIONES_CHILE) o null
+  region: null,              // ámbito del Resumen: región (nombre en REGIONES_CHILE) o null = todo el país
+  area: null,                // … y área protegida dentro de la región, o null
+  mio: false,                // solo permisos cuya etapa actual está a cargo del usuario conectado
   driveNeedsAuth: false,
 };
+// El ámbito también viaja en la URL (?region=…&area=…&mio=1): un enlace abre la misma vista
+(() => {
+  const u = new URLSearchParams(location.search);
+  STATE.region = u.get('region') || null;
+  STATE.area = STATE.region ? (u.get('area') || null) : null;
+  STATE.mio = u.get('mio') === '1';
+})();
 
 // ─── Investigaciones helpers ──────────────────────────────────────────────────
 const _normInv = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
@@ -754,13 +763,13 @@ function renderDashboard() {
   $('desempeno-res').textContent =
     `${s.total} ingresadas · ${s.completados} aprobadas · ${s.rechazados} rechazadas · mediana ${s.mediana} d`;
 
+  // Orden: ámbito → requiere atención → territorio → desempeño (gráficos + tabla de permisos).
+  // Todo usa el mismo ámbito (región, área protegida y «a mi cargo»).
+  renderAmbito();
   renderAtencion(ts, STATE.region);   // static/js/atencion.js
-  renderFiltroRegiones();
-  renderTerritorio(STATE.region || (window.PERFIL?.solo_su_region ? PERFIL.region : null), STATE.tipo);   // static/js/territorio.js
-  // La matriz regional siempre muestra todas las regiones del tipo (destacando la elegida)
+  renderTerritorio(STATE.region || (window.PERFIL?.solo_su_region ? PERFIL.region : null), STATE.tipo, STATE.area);   // static/js/territorio.js
+  // La matriz de regiones (escala país) usa todas las regiones del tipo
   renderResumenVisual(ts, f, tramitesDelTipo({ todasLasRegiones: true }), STATE.region);   // static/js/resumen.js
-  renderTablaRecientes();
-  renderDuplicadosSection();
 }
 
 const IDS_INVESTIGACION = new Set([517, 692, 1992]);
@@ -769,49 +778,80 @@ const IDS_FILMACION     = new Set([437, 585, 631, 632, 672]);
 // ─── Tipo activo (Investigación / Filmación y Fotografía) ─────────────────────
 const GRUPO_DE_TIPO = { inv: 'investigacion', film: 'filmacion' };
 
-// Filtro por región del Resumen (null = todas). Un trámite multirregional cuenta en cada región.
-function filtrarPorRegion(lista) {
-  if (!STATE.region) return lista;
-  return lista.filter(t => (t.regiones_list || []).includes(STATE.region));
-}
+// ─── Ámbito del Resumen: región → área protegida (+ «a mi cargo») ──────────────
+// Un trámite multirregional cuenta en cada región; el área se compara sin tildes y de forma
+// tolerante (el formulario y los límites oficiales escriben los nombres distinto).
+const areaCoincide = (x, a) => { const n = _normInv(x), m = _normInv(a); return !!n && !!m && (n.includes(m) || m.includes(n)); };
 
-function tramitesDelTipo({ todasLasRegiones = false } = {}) {
+function filtrarPorAmbito(lista, { sinRegion = false, sinArea = false } = {}) {
+  let r = lista;
+  if (STATE.region && !sinRegion) r = r.filter(t => (t.regiones_list || []).includes(STATE.region));
+  if (STATE.area && !sinArea && !sinRegion) r = r.filter(t => (t.areas_protegidas || []).some(x => areaCoincide(x, STATE.area)));
+  if (STATE.mio) {
+    const yo = (window.PERFIL?.email || '').toLowerCase();
+    r = r.filter(t => yo && (t.etapa_actual?.email || '').toLowerCase() === yo);
+  }
+  return r;
+}
+const filtrarPorRegion = lista => filtrarPorAmbito(lista);
+
+function tramitesDelTipo({ todasLasRegiones = false, sinArea = false } = {}) {
   const ids = STATE.tipo === 'film' ? IDS_FILMACION : IDS_INVESTIGACION;
   const delTipo = STATE.tramites.filter(t => ids.has(t.proceso_id));
-  return todasLasRegiones ? delTipo : filtrarPorRegion(delTipo);
+  return filtrarPorAmbito(delTipo, { sinRegion: todasLasRegiones, sinArea });
 }
 
-function setRegion(region) {
-  if (window.PERFIL?.solo_su_region) return;   // perfil restringido: su región es fija
-  STATE.region = region === STATE.region ? null : region;   // clic en la activa = quitar filtro
+function _guardarAmbitoUrl() {
+  const u = new URL(location.href);
+  [['region', STATE.region], ['area', STATE.area], ['mio', STATE.mio ? '1' : null]].forEach(([k, v]) => {
+    if (v) u.searchParams.set(k, v); else u.searchParams.delete(k);
+  });
+  history.replaceState(null, '', u.pathname + u.search + u.hash);
+}
+
+function setAmbito(region, area = null) {
+  if (window.PERFIL?.solo_su_region && !window.PERFIL?.superusuario) region = PERFIL.region;   // su región es fija
+  STATE.region = region || null;
+  STATE.area = STATE.region ? (area || null) : null;
+  _guardarAmbitoUrl();
   if (STATE.tramites.length) renderDashboard();
 }
+// clic en la región o el área activa = quitarla
+function setRegion(region) { setAmbito(region === STATE.region ? null : region); }
+function setArea(area) { setAmbito(STATE.region, area && area === STATE.area ? null : area); }
 
-function renderFiltroRegiones() {
+function renderAmbito() {
   const el = $('filtro-regiones');
   if (!el) return;
-  if (window.PERFIL?.solo_su_region) {
-    el.innerHTML = `<div class="reg-filtro-head"><span>Región de ${escHtml(PERFIL.region)} <small>su perfil muestra solo esta región</small></span></div>`;
-    return;
-  }
+  const fija = window.PERFIL?.solo_su_region && !window.PERFIL?.superusuario;
   const base = tramitesDelTipo({ todasLasRegiones: true });
-  const n = nombre => base.filter(t => (t.regiones_list || []).includes(nombre)).length;
-  const btn = (valor, codigo, etiqueta, cantidad) => {
-    const activo = (STATE.region || null) === valor;
-    return `<button class="reg-btn${activo ? ' activo' : ''}${cantidad === 0 ? ' vacio' : ''}"
-      data-region="${escHtml(valor || '')}" aria-pressed="${activo}" title="${escHtml(etiqueta)}: ${cantidad} solicitudes">
-      ${codigo ? `<span class="reg-cod">${escHtml(codigo)}</span>` : ''}<span class="reg-nom">${escHtml(etiqueta)}</span><span class="reg-n">${cantidad}</span>
-    </button>`;
-  };
-  el.innerHTML = `
-    <div class="reg-filtro-head">
-      <span>Filtrar por región <small>de norte a sur</small></span>
-      ${STATE.region ? `<button class="reg-limpiar" data-region="">✕ Quitar filtro: ${escHtml(STATE.region)}</button>` : ''}
-    </div>
-    <div class="reg-btns">
-      ${btn(null, '', 'Todas', base.length)}
-      ${REGIONES_CHILE.map(r => btn(r.nombre, r.codigo, r.nombre, n(r.nombre))).join('')}
-    </div>`;
+  const nReg = nombre => base.filter(t => (t.regiones_list || []).includes(nombre)).length;
+  const enRegion = STATE.region ? base.filter(t => (t.regiones_list || []).includes(STATE.region)) : [];
+  const areas = new Map();
+  enRegion.forEach(t => (t.areas_protegidas || []).forEach(a => areas.set(a, (areas.get(a) || 0) + 1)));
+  const listaAreas = [...areas.entries()].sort((a, b) => b[1] - a[1]);
+  if (STATE.area && !listaAreas.some(([a]) => areaCoincide(a, STATE.area))) listaAreas.unshift([STATE.area, 0]);
+  const sel = a => STATE.area && areaCoincide(a, STATE.area) && (a === STATE.area || !listaAreas.some(([x]) => x === STATE.area));
+  const total = tramitesDelTipo().length;
+  const yo = (window.PERFIL?.email || '').toLowerCase();
+  const nMio = yo ? STATE.tramites.filter(t => (STATE.tipo === 'film' ? IDS_FILMACION : IDS_INVESTIGACION).has(t.proceso_id)
+    && (t.etapa_actual?.email || '').toLowerCase() === yo).length : 0;
+  el.innerHTML = `<div class="amb">
+    <label class="amb-campo"><span>Región</span>
+      <select id="amb-region" ${fija ? 'disabled' : ''}>
+        ${fija ? '' : `<option value="">Todo el país (${base.length})</option>`}
+        ${REGIONES_CHILE.map(r => `<option value="${escHtml(r.nombre)}" ${STATE.region === r.nombre ? 'selected' : ''}>${escHtml(r.codigo)} · ${escHtml(r.nombre)} (${nReg(r.nombre)})</option>`).join('')}
+      </select></label>
+    <label class="amb-campo"><span>Área protegida</span>
+      <select id="amb-area" ${STATE.region ? '' : 'disabled'} title="${STATE.region ? '' : 'Elija primero una región'}">
+        <option value="">${STATE.region ? `Todas las de la región (${enRegion.length})` : 'Elija primero una región'}</option>
+        ${listaAreas.map(([a, n]) => `<option value="${escHtml(a)}" ${sel(a) ? 'selected' : ''}>${escHtml(a)}${n ? ` (${n})` : ''}</option>`).join('')}
+      </select></label>
+    ${yo ? `<label class="amb-mio" title="Permisos cuya etapa actual está asignada a ${escHtml(yo)}">
+      <input type="checkbox" id="amb-mio" ${STATE.mio ? 'checked' : ''}> A mi cargo <b>${nMio}</b></label>` : ''}
+    <span class="amb-total"><b>${total.toLocaleString('es-CL')}</b> permisos en este ámbito</span>
+    ${(STATE.region && !fija) || STATE.area || STATE.mio ? '<button class="amb-limpiar" id="amb-limpiar">Ver todo</button>' : ''}
+  </div>`;
 }
 
 function setTipo(tipo) {
@@ -1642,123 +1682,6 @@ function _avancePorRegion(tramites) {
     });
   });
   return byRegion;
-}
-
-function renderTablaRecientes() {
-  const ahora = new Date();
-  const hace3meses = new Date(ahora);
-  hace3meses.setMonth(ahora.getMonth() - 3);
-
-  const ORDEN_GRUPO = { pendiente: 0, completado: 1, rechazado: 2 };
-
-  const recientes = tramitesDelTipo()
-    .filter(t => t.fecha_inicio && new Date(t.fecha_inicio) >= hace3meses)
-    .sort((a, b) => {
-      // 1° criterio: grupo (pendiente → completado → rechazado)
-      const ga = ORDEN_GRUPO[a.estado] ?? 3;
-      const gb = ORDEN_GRUPO[b.estado] ?? 3;
-      if (ga !== gb) return ga - gb;
-      // 2° criterio: dentro del grupo, más antiguos primero
-      return new Date(a.fecha_inicio) - new Date(b.fecha_inicio);
-    });
-
-  if (!recientes.length) {
-    $('tabla-recientes').innerHTML = '<div class="empty-msg">Sin trámites en los últimos 3 meses</div>';
-    return;
-  }
-
-  const rows = recientes.map(t => {
-    const vencida   = tramiteEsVencido(t);
-    const rechazado = t.estado === 'rechazado';
-    const rowClass  = rechazado ? 'row-rechazado'
-                    : vencida   ? 'row-vencido'
-                    : t.estado === 'pendiente' ? 'row-pendiente' : '';
-    return `
-    <tr class="${rowClass}">
-      <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
-      <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente, tramite: t })}</td>
-      <td>${tipoBadgeHtml(t)}</td>
-      <td>${escHtml(t.nombre_solicitante || '–')}</td>
-      <td>${regionMiniMapHtml(t)}</td>
-      <td>${progressHtml(t.porcentaje_avance)}</td>
-      <td>${formatDate(t.fecha_inicio)}</td>
-    </tr>`;
-  }).join('');
-
-  $('tabla-recientes').innerHTML = `
-    <div style="padding:8px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)">
-      ${recientes.length} trámite${recientes.length !== 1 ? 's' : ''} en los últimos 3 meses
-    </div>
-    <table>
-      <thead><tr>
-        <th>ID</th><th>Estado</th><th>Tipo</th><th>Solicitante</th>
-        <th>Regiones</th><th>Avance</th><th>Fecha Inicio</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
-
-// ─── DUPLICADOS REGIONALES ────────────────────────────────────────────────────
-function renderDuplicadosSection() {
-  const seccion = $('seccion-duplicados');
-  if (!seccion) return;
-
-  if (STATE.duplicados.size === 0) {
-    seccion.style.display = 'none';
-    return;
-  }
-
-  // Reconstruir grupos únicos para mostrar en tabla, solo con trámites del tipo activo
-  // (la detección cruza tipos: una misma persona puede tener investigación y filmación
-  // del mismo proyecto; en cada sección solo cuentan los de esa sección)
-  const delTipo = new Set(tramitesDelTipo().map(t => t.id));
-  const gruposVistos = new Map();
-  for (const t of tramitesDelTipo().filter(t => STATE.duplicados.has(t.id))) {
-    const titulo = _normInv(_tituloTramite(t));
-    const email  = _normInv(t.email_solicitante || '');
-    const key    = titulo.length >= 5
-      ? `${email}§${titulo}`
-      : `${email}§${t.proceso_id}`;
-    const grupo = [t, ...STATE.duplicados.get(t.id).filter(o => delTipo.has(o.id))];
-    if (!gruposVistos.has(key) && grupo.length >= 2) gruposVistos.set(key, grupo);
-  }
-  const afectados = new Set([...gruposVistos.values()].flat().map(t => t.id));
-  if (!gruposVistos.size) {
-    seccion.style.display = 'none';
-    return;
-  }
-
-  const filas = [...gruposVistos.values()].map(grupo => {
-    const rep = grupo[0];
-    const tituloRaw = _tituloTramite(rep) || '–';
-    const tituloShort = tituloRaw.length > 80 ? tituloRaw.slice(0, 80) + '…' : tituloRaw;
-    const btns = grupo.map(t =>
-      `<button class="btn-detalle" onclick="openModal(${t.id})" style="font-size:11px;padding:3px 8px">
-        #${t.id} ${(t.regiones_list||[]).length ? '– ' + escHtml((t.regiones_list||[]).join(', ')) : ''}
-      </button>`
-    ).join('');
-    return `<tr>
-      <td>${escHtml(rep.nombre_solicitante || '–')}<br><small style="color:var(--muted)">${escHtml(rep.email_solicitante || '')}</small></td>
-      <td style="font-size:12px">${escHtml(tituloShort)}</td>
-      <td><div style="display:flex;flex-wrap:wrap;gap:6px">${btns}</div></td>
-    </tr>`;
-  }).join('');
-
-  $('alerta-duplicados').innerHTML = `
-    <div style="padding:10px 16px;font-size:13px;color:#7D4E00;background:#FFFDE7;border-bottom:1px solid #FFD700;font-weight:600">
-      Se detectaron ${gruposVistos.size} grupo${gruposVistos.size !== 1 ? 's' : ''} de posibles permisos duplicados por región
-      (${afectados.size} trámite${afectados.size !== 1 ? 's' : ''} afectado${afectados.size !== 1 ? 's' : ''}).
-      El mismo solicitante tiene múltiples solicitudes del mismo proyecto en distintas regiones.
-    </div>
-    <table>
-      <thead><tr>
-        <th style="color:#fff">Solicitante</th>
-        <th style="color:#fff">Proyecto</th>
-        <th style="color:#fff">Trámites detectados</th>
-      </tr></thead>
-      <tbody>${filas}</tbody>
-    </table>`;
-  seccion.style.display = '';
 }
 
 // ─── BÚSQUEDA ─────────────────────────────────────────────────────────────────
@@ -2833,10 +2756,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Filtro por región del Resumen
+  // Barra de ámbito del Resumen (región, área protegida, a mi cargo)
+  $('filtro-regiones').addEventListener('change', e => {
+    if (e.target.id === 'amb-region') setAmbito(e.target.value || null);
+    else if (e.target.id === 'amb-area') setAmbito(STATE.region, e.target.value || null);
+    else if (e.target.id === 'amb-mio') { STATE.mio = e.target.checked; _guardarAmbitoUrl(); renderDashboard(); }
+  });
   $('filtro-regiones').addEventListener('click', e => {
-    const b = e.target.closest('[data-region]');
-    if (b) setRegion(b.dataset.region || null);
+    if (e.target.closest('#amb-limpiar')) { STATE.mio = false; setAmbito(null); }
   });
 
   // Rango de años — validar que desde ≤ hasta
