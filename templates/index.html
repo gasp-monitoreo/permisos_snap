@@ -35,23 +35,33 @@
     {% endif %}
 
     {% if 'resumen_inv' in perfil.secciones %}
-    <div class="sb-group sb-group--inv">Investigación</div>
-    <button class="tab-btn" data-tab="dashboard" data-tipo="inv" data-title="Investigación · Resumen">
-      <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-      <span>Resumen</span>
-    </button>
+    <div class="sb-area sb-area--inv" role="group" aria-label="Investigación">
+      <div class="sb-area-titulo" title="Investigación">
+        <svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7 15h10"/></svg>
+        <span>Investigación</span>
+      </div>
+      <button class="tab-btn" data-tab="dashboard" data-tipo="inv" data-title="Investigación · Resumen">
+        <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <span>Resumen</span>
+      </button>
+    </div>
     {% endif %}
 
     {% if 'resumen_film' in perfil.secciones %}
-    <div class="sb-group sb-group--film">Filmación y Fotografía</div>
-    <button class="tab-btn" data-tab="dashboard" data-tipo="film" data-title="Filmación y Fotografía · Resumen">
-      <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-      <span>Resumen</span>
-    </button>
+    <div class="sb-area sb-area--film" role="group" aria-label="Filmación y Fotografía">
+      <div class="sb-area-titulo" title="Filmación y Fotografía">
+        <svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.5" r="3.5"/><path d="M8 7l1.5-3h5L16 7"/></svg>
+        <span>Filmación y Fotografía</span>
+      </div>
+      <button class="tab-btn" data-tab="dashboard" data-tipo="film" data-title="Filmación y Fotografía · Resumen">
+        <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <span>Resumen</span>
+      </button>
+    </div>
     {% endif %}
 
     {% if 'busqueda' in perfil.secciones or 'exportar' in perfil.secciones or perfil.superusuario %}
-    <div class="sb-group">Herramientas</div>
+    <div class="sb-group sb-group--herr">Herramientas</div>
     {% endif %}
     {% if 'busqueda' in perfil.secciones %}
     <button class="tab-btn" data-tab="busqueda" data-title="Búsqueda">

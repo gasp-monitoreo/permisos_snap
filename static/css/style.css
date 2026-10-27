@@ -155,6 +155,32 @@ body {
   transition: opacity .18s;
 }
 .sb-group:first-child { padding-top: 0; }
+.sb-group--herr { margin-top: 10px; border-top: 1px solid rgba(255,255,255,.1); padding-top: 18px; }
+
+/* Áreas de trabajo: cada una en su bloque, con su color e ícono */
+.sb-area {
+  --area: var(--em-400);
+  --area-activo: var(--em-600);
+  margin-top: 12px;
+  padding: 4px 6px 6px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-left: 4px solid var(--area);
+}
+.sb-area--film { --area: var(--brand-sky); --area-activo: #17669A; }
+.sb-area-titulo {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 8px 7px;
+  font-size: 12px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase;
+  color: var(--area);
+  white-space: nowrap;
+}
+.sb-area-titulo svg { width: 18px; height: 18px; flex-shrink: 0; fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.sb-area-titulo span { transition: opacity .18s; }
+.sb-area .tab-btn { padding-left: 12px; }
+.sb-area .tab-btn.active { background: var(--area-activo); }
 
 .tab-btn, .sb-logout {
   display: flex;
@@ -206,7 +232,11 @@ body {
 .sb-collapsed .sb-wordmark,
 .sb-collapsed .sb-group,
 .sb-collapsed .tab-btn span,
+.sb-collapsed .sb-area-titulo span,
 .sb-collapsed .sb-logout span { opacity: 0; pointer-events: none; }
+.sb-collapsed .sb-area { padding: 2px 0 4px; border-left-width: 3px; }
+.sb-collapsed .sb-area-titulo { padding: 8px 0 6px 14px; }
+.sb-collapsed .sb-area .tab-btn { padding-left: 12px; }
 .sb-collapsed .sb-group { height: 18px; padding: 0; }
 .sb-collapsed .sb-nav { padding-left: 12px; padding-right: 12px; }
 .sb-collapsed .tab-btn, .sb-collapsed .sb-logout { padding-left: 14px; }
@@ -214,7 +244,7 @@ body {
 .sb-collapsed .sb-logout { padding-left: 15px; }
 .sb-collapsed .sb-toggle { transform: rotate(180deg); }
 
-/* Con el menú contraído, cada grupo se marca con una línea del color del tipo */
+/* Con el menú contraído, el grupo Herramientas se marca con una línea */
 .sb-collapsed .sb-group::after {
   content: '';
   display: block;
@@ -225,8 +255,6 @@ body {
   opacity: 1;
 }
 .sb-collapsed .sb-group { opacity: 1; color: transparent; }
-.sb-collapsed .sb-group--inv::after  { background: var(--em-400); }
-.sb-collapsed .sb-group--film::after { background: var(--brand-sky); }
 
 [hidden] { display: none !important; }
 
@@ -1594,7 +1622,10 @@ tbody td { padding: 10px 14px; vertical-align: middle; }
   .sb-open .sidebar { transform: none; }
   .sb-toggle { display: none; }
   .sb-collapsed .sb-wordmark, .sb-collapsed .sb-group,
-  .sb-collapsed .tab-btn span, .sb-collapsed .sb-logout span { opacity: 1; pointer-events: auto; }
+  .sb-collapsed .tab-btn span, .sb-collapsed .sb-logout span,
+  .sb-collapsed .sb-area-titulo span { opacity: 1; pointer-events: auto; }
+  .sb-collapsed .sb-area { padding: 4px 6px 6px; border-left-width: 4px; }
+  .sb-collapsed .sb-area-titulo { padding: 9px 8px 7px; }
   .sb-collapsed .sb-group { height: auto; padding: 14px 12px 8px; color: var(--em-200); }
   .sb-collapsed .sb-group::after { display: none; }
   .sb-collapsed .sb-emblema { width: 84px; height: 84px; }
