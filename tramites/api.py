@@ -1270,3 +1270,45 @@ def buscar_resoluciones_zip(request):
                                          proteger=not privacidad.ve_sensible(request.user)), content_type='application/zip')
     resp['Content-Disposition'] = f'attachment; filename="resoluciones_{datetime.now():%Y%m%d_%H%M}.zip"'
     return resp
+
+
+# ── Informe PDF del permiso ───────────────────────────────────────────────────
+
+@api.get('/tramites/{tramite_id}/informe.pdf')
+def informe_pdf(request, tramite_id: int):
+    """Ficha completa del permiso en PDF (respeta región y protección de datos del perfil)."""
+    from .informe import _entregas, pdf
+    from .models import AccesoInvestigador, RegistroGeografico
+    from .presion import _tipo
+    from .core import extract_titulo
+    t, err = _tramite_con_acceso(request, tramite_id)
+    if err:
+        return err
+    protegido = not privacidad.ve_sensible(request.user)
+    feats = [r.como_feature() for r in RegistroGeografico.objects.filter(tramite_id=tramite_id)]
+    email = (t.get('email_solicitante') or '').strip().lower()
+    nombre = (t.get('nombre_solicitante') or '').strip().lower()
+    datos, _ = _anios_busqueda()
+    vistos, rel = {t['id']}, []
+    for x in sorted(_filtrar_region(request, datos), key=lambda x: x.get('fecha_inicio') or '', reverse=True):
+        if x['id'] in vistos:
+            continue
+        if (email and (x.get('email_solicitante') or '').strip().lower() == email) or \
+                (len(nombre) > 6 and (x.get('nombre_solicitante') or '').strip().lower() == nombre):
+            vistos.add(x['id'])
+            rel.append({'id': x['id'], 'titulo': extract_titulo(x.get('datos_raw') or {}) or '–',
+                        'estado': {'pendiente': 'En trámite', 'completado': 'Aprobado', 'rechazado': 'Rechazado'}.get(x.get('estado'), x.get('estado')),
+                        'fecha': x.get('fecha_inicio')})
+    tipo = _tipo(t)
+    extra = {
+        'tipo': tipo, 'protegido': protegido,
+        'proceso': 'Permiso de Investigación en el SNAP' if tipo == 'inv' else 'Solicitud de Filmación y Fotografía en el SNAP',
+        'registros': [privacidad.feature(f) for f in feats] if protegido else feats,
+        'acceso': AccesoInvestigador.objects.filter(tramite_id=tramite_id).first(),
+        'entregas': _entregas(t), 'relacionados': rel,
+    }
+    contenido = pdf(privacidad.tramite(t) if protegido else t, extra, request.user)
+    log.info('Informe PDF del trámite %s descargado por %s%s', tramite_id, request.user.pk, ' (protegido)' if protegido else '')
+    resp = HttpResponse(contenido, content_type='application/pdf')
+    resp['Content-Disposition'] = f'attachment; filename="informe_permiso_{int(tramite_id)}.pdf"'
+    return resp

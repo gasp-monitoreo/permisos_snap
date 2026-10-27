@@ -362,3 +362,27 @@ def test_indice_y_registro_protegidos_para_lector(monkeypatch):
     f = _cliente(lector).get('/api/tramites/9/registro-geografico').json()['features'][0]
     assert f['geometry']['coordinates'] == [-71.94, -39.27]                    # ~1 km
     assert _cliente(editor).get('/api/tramites/9/registro-geografico').json()['features'][0]['geometry']['coordinates'] == [-71.941532, -39.273112]
+
+
+# ─── Informe PDF del permiso ──────────────────────────────────────────────────
+@pytest.mark.django_db
+def test_informe_pdf_respeta_region_y_protege_datos(monkeypatch):
+    import fitz
+    import tramites.adjuntos as adj
+    import tramites.api as api_mod
+    t = {'id': 700, 'proceso_id': 517, 'estado': 'completado', 'etapas_completadas': 2, 'total_etapas': 2, 'porcentaje_avance': 100,
+         'regiones_list': ['Maule'], 'areas_protegidas': ['RN Altos de Lircay'], 'nombre_solicitante': 'Ana Pérez',
+         'email_solicitante': 'ana@u.cl', 'fecha_inicio': '2026-03-01T10:00:00', 'fecha_resolucion': '2026-03-20T10:00:00',
+         'etapas': [{'id': 1, 'estado': 'completado', 'email': 'func@conaf.cl', 'nombres': 'Funcionaria CONAF',
+                     'fecha_inicio': '2026-03-01T10:00:00', 'fecha_termino': '2026-03-20T10:00:00'}],
+         'datos_raw': {'titulo_investigacion': 'Anfibios de Lircay', 'cedula_de_identidad': '12.345.678-9'}}
+    monkeypatch.setattr(adj, 'tramite_vivo', lambda tid: t)
+    monkeypatch.setattr(api_mod, '_anios_busqueda', lambda: ([t], []))
+    texto = lambda c: ' '.join(''.join(p.get_text() for p in fitz.open(stream=c.get('/api/tramites/700/informe.pdf').content, filetype='pdf')).split())
+    lector = _usuario('lector@conaf.cl', region='Maule', solo_su_region=True)
+    contenido = texto(_cliente(lector))
+    assert 'de Lircay' in contenido and 'Funcionaria CONAF' in contenido and 'func@conaf.cl' in contenido
+    assert '12.345.678-9' not in contenido and 'ana@u.cl' not in contenido
+    assert '12.345.678-9' in texto(_cliente(_usuario('editor@conaf.cl', puede_editar=True)))
+    otra = _usuario('otra@conaf.cl', region='Araucanía', solo_su_region=True)
+    assert _cliente(otra).get('/api/tramites/700/informe.pdf').status_code == 403

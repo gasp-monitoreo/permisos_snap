@@ -347,6 +347,7 @@ window.Ficha = (() => {
         </div>
         <div class="fx-acciones">
           ${res ? `<a class="fx-btn fx-btn--pri" href="/api/tramites/${t.id}/adjuntos/${encodeURIComponent(res[0])}" target="_blank" rel="noopener">Resolución</a>` : ''}
+          <a class="fx-btn" href="/api/tramites/${t.id}/informe.pdf" data-tip="${escHtml('<strong>Informe PDF del permiso</strong><br><small>Ficha completa: situación, tiempos, proyecto, territorio, seguimiento CONAF, documentos, cumplimiento y la solicitud completa.</small>')}">Informe PDF</a>
           ${piezas.adjuntos.length ? `<a class="fx-btn" href="/api/tramites/${t.id}/adjuntos.zip">Adjuntos (ZIP)</a>` : ''}
           <a class="fx-btn" href="${safeUrl(`https://conaf.cerofilas.gob.cl/backend/seguimiento/ver/${t.id}`)}" target="_blank" rel="noopener">Cero Filas ↗</a>
           <button class="fx-btn" data-fx-copiar>Copiar enlace</button>
