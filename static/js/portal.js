@@ -499,8 +499,8 @@
         <ul class="pt-compromisos">
           <li class="${registros.length ? 'hecho' : ''}"><button data-ir="registro">Registrar dónde trabaja (puntos, transectos y parcelas)</button>
             <small>${registros.length ? `${registros.length} registro${registros.length === 1 ? '' : 's'} ingresado${registros.length === 1 ? '' : 's'}` : 'Pendiente'}</small></li>
-          ${p.numeral6 ? `<li><span>Al terminar, entregar a CONAF el informe final, las publicaciones y el material complementario</span>
-            <small>Numeral 6 del Reglamento de investigación</small></li>` : ''}
+          ${p.numeral6 ? `<li id="pt-n6-estado"><button data-ir="n6">Entregar resultados a CONAF (informes, publicaciones, datos)</button>
+            <small id="pt-n6-count">Cargando…</small></li>` : ''}
           <li><span>Respetar el período, las áreas y las condiciones indicadas en la resolución</span></li>
         </ul>
       </section>
@@ -526,7 +526,88 @@
   function irA(t) {
     marcarPestana(t);
     if (dibujo) { mapa.doubleClickZoom.enable(); mapa.getContainer().classList.remove('pt-dibujando'); }
-    if (t === 'permiso') vistaPermiso(); else vistaLista();
+    if (t === 'permiso') vistaPermiso();
+    else if (t === 'n6') vistaN6();
+    else vistaLista();
+  }
+
+  // ─── Vista: Entrega N6 ──────────────────────────────────────────────────────
+  const TIPOS_ENTREGA = {
+    informe: 'Informe técnico o de avance', publicacion: 'Publicación científica',
+    datos: 'Base de datos o datos brutos', material: 'Material educativo o divulgativo',
+    otro: 'Otro material entregado',
+  };
+  const fmtTam = b => b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+
+  async function vistaN6() {
+    mapa.getContainer().classList.remove('pt-dibujando');
+    panel.innerHTML = `<section class="pt-intro"><h1>Entrega N.° 6</h1>
+      <p>Aquí puede subir los resultados comprometidos en su permiso: informes técnicos, publicaciones, bases de datos u otro material. Máximo <strong>80 MB</strong> por archivo.</p></section>
+      <div id="pt-n6-lista"><div class="pt-vacio">Cargando…</div></div>
+      <section class="pt-n6-subir">
+        <h2>Subir un archivo</h2>
+        <form id="pt-n6-form" enctype="multipart/form-data">
+          <label>Nombre descriptivo (obligatorio)<input name="nombre" required placeholder="Ej: Informe final temporada 2024" maxlength="255"></label>
+          <label>Tipo de material<select name="tipo">${Object.entries(TIPOS_ENTREGA).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></label>
+          <label>Descripción <small>(opcional: autores, año, DOI, resumen breve)</small><textarea name="descripcion" rows="3" maxlength="2000" placeholder="Ej: Martínez et al. (2024), publicado en Gayana Botánica, ISSN 0717-6643."></textarea></label>
+          <label>Archivo <small>(.pdf, .docx, .xlsx, .csv, .zip, imágenes, etc. · hasta 80 MB)</small><input type="file" name="archivo" required accept=".pdf,.doc,.docx,.csv,.xls,.xlsx,.pptx,.odt,.zip,.jpg,.jpeg,.png,.txt,.mp4,.avi,.mov"></label>
+          <p class="pt-error" id="pt-n6-err" hidden></p>
+          <button class="pt-btn" type="submit">Subir archivo</button>
+        </form>
+      </section>`;
+
+    let archivos = [];
+    function renderLista() {
+      const cont = $('pt-n6-lista');
+      if (!cont) return;
+      if (!archivos.length) { cont.innerHTML = '<p class="pt-vacio">Aún no ha entregado archivos.</p>'; return; }
+      cont.innerHTML = `<ul class="pt-n6-items">${archivos.map(a =>
+        `<li><span class="pt-n6-ico">📄</span>
+          <span class="pt-n6-txt"><strong>${esc(a.nombre)}</strong>
+          <small>${esc(a.tipo_nombre)} · ${fmtTam(a.tamano)} · subido el ${fechaCl ? fechaCl(a.subido_en) : a.subido_en.split('T')[0]}</small>
+          ${a.descripcion ? `<em>${esc(a.descripcion)}</em>` : ''}</span>
+          <button class="pt-btn pt-btn--suave pt-n6-del" data-id="${a.id}">Eliminar</button>
+        </li>`).join('')}</ul>`;
+      cont.querySelectorAll('.pt-n6-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Eliminar este archivo? Esta acción no se puede deshacer.')) return;
+          btn.disabled = true;
+          try {
+            await api(`/portal/api/n6/${btn.dataset.id}/borrar`, { method: 'POST', headers: {} });
+            archivos = archivos.filter(a => String(a.id) !== btn.dataset.id);
+            renderLista();
+            _actualizarContadorN6(archivos.length);
+          } catch (e) { aviso('No se pudo eliminar: ' + e.message, true); btn.disabled = false; }
+        });
+      });
+    }
+
+    try {
+      archivos = (await api('/portal/api/n6')).archivos || [];
+      renderLista();
+      _actualizarContadorN6(archivos.length);
+    } catch (e) { if ($('pt-n6-lista')) $('pt-n6-lista').innerHTML = `<p class="pt-vacio">${esc(e.message)}</p>`; }
+
+    $('pt-n6-form')?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const form = e.target, err = $('pt-n6-err'), btn = form.querySelector('[type=submit]');
+      err.hidden = true; btn.disabled = true; btn.textContent = 'Subiendo…';
+      try {
+        const r = await api('/portal/api/n6/subir', { method: 'POST', body: new FormData(form), headers: {} });
+        archivos.unshift(r.archivo);
+        renderLista();
+        form.reset();
+        _actualizarContadorN6(archivos.length);
+      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+      finally { btn.disabled = false; btn.textContent = 'Subir archivo'; }
+    });
+  }
+
+  function _actualizarContadorN6(n) {
+    const el = $('pt-n6-count');
+    if (el) el.textContent = n ? `${n} archivo${n === 1 ? '' : 's'} entregado${n === 1 ? '' : 's'}` : 'Pendiente';
+    const li = $('pt-n6-estado');
+    if (li) li.className = n ? 'hecho' : '';
   }
   document.querySelector('.pt-tabs').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]');
@@ -582,10 +663,23 @@
   (async () => {
     encuadrar();
     vistaPermiso();
-    try {
-      registros = (await api('/portal/api/registros')).features;
+    const [regRes, n6Res] = await Promise.allSettled([
+      api('/portal/api/registros'),
+      D.acceso.tipo === 'inv' ? api('/portal/api/n6') : Promise.resolve(null),
+    ]);
+    if (regRes.status === 'fulfilled') {
+      registros = regRes.value.features;
       pintarRegistros(); encuadrar();
-      if (pestana === 'registro') vistaLista(); else if (permiso) vistaPermiso();
-    } catch (e) { aviso('No se pudieron cargar sus registros: ' + e.message, true); }
+      if (pestana === 'registro') vistaLista();
+      else if (pestana === 'n6') vistaN6();
+      else if (permiso) vistaPermiso();
+    } else {
+      aviso('No se pudieron cargar sus registros: ' + regRes.reason?.message, true);
+    }
+    if (n6Res.status === 'fulfilled' && n6Res.value) {
+      _actualizarContadorN6((n6Res.value.archivos || []).length);
+    } else {
+      _actualizarContadorN6(0);
+    }
   })();
 })();

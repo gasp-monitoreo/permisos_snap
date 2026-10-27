@@ -668,6 +668,86 @@ def investigaciones_upload(
             'carpeta': f'{carpeta_base}/{tramite_id}'}
 
 
+# ── Numeral 6: entrega de resultados (acceso CONAF) ───────────────────────────
+
+def _n6_dir_api(tramite_id):
+    import os
+    d = os.path.join(INV_DIR, '_n6', str(tramite_id))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+@api.get('/tramites/{tramite_id}/n6')
+def tramite_n6_listar(request, tramite_id: int):
+    from .models import EntregaN6
+    archivos = EntregaN6.objects.filter(tramite_id=tramite_id).select_related('subido_por')
+    return {'ok': True, 'archivos': [a.como_dict() for a in archivos]}
+
+
+@api.post('/tramites/{tramite_id}/n6/subir')
+@requiere(accion='agregar')
+def tramite_n6_subir(
+    request,
+    tramite_id: int,
+    nombre: Form[str],
+    tipo: Form[str] = 'informe',
+    descripcion: Form[str] = '',
+    archivo: UploadedFile = File(...),
+):
+    import os, re as re2
+    from .models import EntregaN6, MAX_N6_MB, N6_EXTENSIONS, TIPOS_ENTREGA
+    if not nombre or not nombre.strip():
+        return api.create_response(request, {'ok': False, 'error': 'Falta el nombre.'}, status=400)
+    if archivo.size > MAX_N6_MB * 1024 * 1024:
+        return api.create_response(request, {'ok': False, 'error': f'El archivo supera {MAX_N6_MB} MB.'}, status=400)
+    ext = os.path.splitext(archivo.name)[1].lower()
+    if ext not in N6_EXTENSIONS:
+        return api.create_response(request, {'ok': False, 'error': f'Extensión no permitida ({ext}).'}, status=400)
+    if tipo not in dict(TIPOS_ENTREGA):
+        tipo = 'otro'
+    fname = re2.sub(r'[^\w\.\-\(\) ]', '_', archivo.name).strip()
+    if not fname:
+        return api.create_response(request, {'ok': False, 'error': 'Nombre de archivo no válido.'}, status=400)
+    n6d = _n6_dir_api(tramite_id)
+    dest = os.path.join(n6d, fname)
+    if not os.path.abspath(dest).startswith(os.path.abspath(n6d) + os.sep):
+        return api.create_response(request, {'ok': False, 'error': 'Ruta no permitida.'}, status=400)
+    base, xxt = os.path.splitext(dest)
+    i = 1
+    while os.path.exists(dest):
+        dest = f'{base}_{i}{xxt}'
+        i += 1
+    with open(dest, 'wb') as out:
+        for chunk in archivo.chunks():
+            out.write(chunk)
+    ar = EntregaN6.objects.create(
+        tramite_id=tramite_id, nombre=nombre.strip()[:255], tipo=tipo,
+        descripcion=(descripcion or '').strip()[:2000], archivo=os.path.basename(dest),
+        tamano=archivo.size, subido_por=request.user,
+    )
+    from .auditoria import registrar as _audit
+    _audit(request, 'archivo_subido', 'n6', str(tramite_id),
+           f'Archivo N6 subido al trámite #{tramite_id}: {ar.nombre}',
+           {'ruta': dest, 'nombre': ar.nombre, 'tramite_id': tramite_id})
+    return {'ok': True, 'archivo': ar.como_dict()}
+
+
+@api.delete('/tramites/{tramite_id}/n6/{archivo_id}')
+@requiere(accion='agregar')
+def tramite_n6_borrar(request, tramite_id: int, archivo_id: int):
+    import os
+    from .models import EntregaN6
+    try:
+        ar = EntregaN6.objects.get(pk=archivo_id, tramite_id=tramite_id)
+    except EntregaN6.DoesNotExist:
+        return api.create_response(request, {'ok': False, 'error': 'Archivo no encontrado.'}, status=404)
+    ruta = os.path.join(_n6_dir_api(tramite_id), ar.archivo)
+    if os.path.isfile(ruta):
+        os.remove(ruta)
+    ar.delete()
+    return {'ok': True}
+
+
 # ── Traducción ────────────────────────────────────────────────────────────────
 
 @api.post('/translate')

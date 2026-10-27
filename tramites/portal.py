@@ -23,7 +23,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from .geo import GeoError, TIPO_DE, importar, validar_geometria
-from .models import CATEGORIAS_REGISTRO, AccesoInvestigador, RegistroGeografico
+from .models import (CATEGORIAS_REGISTRO, AccesoInvestigador, EntregaN6,
+                     MAX_N6_MB, N6_EXTENSIONS, RegistroGeografico, TIPOS_ENTREGA)
 from .usuarios import LoginForm, clave_temporal
 
 log = logging.getLogger(__name__)
@@ -390,6 +391,87 @@ def api_permiso(request):
         'avance': t.get('porcentaje_avance'), 'etapas': etapas, 'documentos': _documentos(t),
         'numeral6': acc.tipo == 'inv',
     }})
+
+
+# ─── Numeral 6: entrega de resultados ────────────────────────────────────────
+import os as _os
+import re as _re2
+
+
+def _n6_dir(tramite_id):
+    from django.conf import settings
+    d = _os.path.join(settings.INVESTIGACIONES_DIR, '_n6', str(tramite_id))
+    _os.makedirs(d, exist_ok=True)
+    return d
+
+
+@require_GET
+@_requiere_investigador
+def api_n6_listar(request):
+    acc = request.acceso
+    if acc.tipo != 'inv':
+        return _error('Solo disponible para permisos de investigación.', 403)
+    archivos = EntregaN6.objects.filter(tramite_id=acc.tramite_id).select_related('subido_por')
+    return JsonResponse({'ok': True, 'archivos': [a.como_dict() for a in archivos]})
+
+
+@require_POST
+@_requiere_investigador
+def api_n6_subir(request):
+    acc = request.acceso
+    if acc.tipo != 'inv':
+        return _error('Solo disponible para permisos de investigación.', 403)
+    f = request.FILES.get('archivo')
+    if not f:
+        return _error('Adjunte un archivo.')
+    if f.size > MAX_N6_MB * 1024 * 1024:
+        return _error(f'El archivo supera {MAX_N6_MB} MB.')
+    ext = _os.path.splitext(f.name)[1].lower()
+    if ext not in N6_EXTENSIONS:
+        return _error(f'Extensión no permitida ({ext}).')
+    nombre = (request.POST.get('nombre') or '').strip()[:255] or _os.path.splitext(f.name)[0][:255]
+    tipo = request.POST.get('tipo', 'informe')
+    if tipo not in dict(TIPOS_ENTREGA):
+        tipo = 'otro'
+    descripcion = (request.POST.get('descripcion') or '').strip()[:2000]
+    fname = _re2.sub(r'[^\w\.\-\(\) ]', '_', f.name).strip()
+    if not fname:
+        return _error('Nombre de archivo no válido.')
+    n6d = _n6_dir(acc.tramite_id)
+    dest = _os.path.join(n6d, fname)
+    if not _os.path.abspath(dest).startswith(_os.path.abspath(n6d) + _os.sep):
+        return _error('Ruta no permitida.', 400)
+    base, xxt = _os.path.splitext(dest)
+    i = 1
+    while _os.path.exists(dest):
+        dest = f'{base}_{i}{xxt}'
+        i += 1
+    with open(dest, 'wb') as out:
+        for chunk in f.chunks():
+            out.write(chunk)
+    ar = EntregaN6.objects.create(
+        tramite_id=acc.tramite_id, nombre=nombre, tipo=tipo,
+        descripcion=descripcion, archivo=_os.path.basename(dest),
+        tamano=f.size, subido_por=request.user,
+    )
+    return JsonResponse({'ok': True, 'archivo': ar.como_dict()})
+
+
+@require_POST
+@_requiere_investigador
+def api_n6_borrar(request, archivo_id):
+    acc = request.acceso
+    try:
+        ar = EntregaN6.objects.get(pk=archivo_id, tramite_id=acc.tramite_id)
+    except EntregaN6.DoesNotExist:
+        return _error('Archivo no encontrado.', 404)
+    if ar.subido_por_id != request.user.id:
+        return _error('No puede eliminar este archivo.', 403)
+    ruta = _os.path.join(_n6_dir(acc.tramite_id), ar.archivo)
+    if _os.path.isfile(ruta):
+        _os.remove(ruta)
+    ar.delete()
+    return JsonResponse({'ok': True})
 
 
 @require_GET

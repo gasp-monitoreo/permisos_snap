@@ -1880,6 +1880,23 @@ a.sb-logout { text-decoration: none; }
 .rg-dl code { font-size: 14px; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; user-select: all; }
 .rg-msg { width: 100%; font: 13px/1.5 'DM Sans', sans-serif; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff; resize: vertical; }
 
+/* ── N6: entrega de resultados (static/js/entrega.js) ── */
+.n6-lista { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.n6-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; }
+.n6-icono { font-size: 20px; flex-shrink: 0; line-height: 1.4; }
+.n6-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
+.n6-info strong { font-weight: 700; }
+.n6-info small { color: var(--muted); font-size: 12px; }
+.n6-info em { color: var(--muted); font-style: normal; font-size: 12.5px; }
+.n6-acciones { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; align-items: flex-start; }
+.n6-upload { margin-top: 12px; }
+.n6-upload summary { list-style: none; }
+.n6-upload summary::-webkit-details-marker { display: none; }
+.n6-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.n6-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; font-weight: 600; }
+.n6-form input, .n6-form select, .n6-form textarea { font-weight: 400; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px; font-size: 13.5px; background: var(--surface2); }
+.n6-credenciales { flex-basis: 100%; display: flex; flex-direction: column; gap: 10px; }
+
 /* ── Vista territorial (static/js/territorio.js) ── */
 .territorio { margin-bottom: 22px; }
 .terr-card .pano-head { flex-wrap: wrap; }

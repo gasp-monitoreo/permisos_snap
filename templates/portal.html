@@ -28,6 +28,7 @@
     <nav class="pt-tabs" role="tablist">
       <button role="tab" data-tab="permiso" aria-selected="true">Mi permiso</button>
       <button role="tab" data-tab="registro" aria-selected="false">Registro geográfico</button>
+      {% if acceso.tipo == 'inv' %}<button role="tab" data-tab="n6" aria-selected="false">Entrega N.° 6</button>{% endif %}
     </nav>
     <div class="pt-panel" id="pt-panel" aria-live="polite"></div>
   </aside>

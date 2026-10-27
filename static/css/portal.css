@@ -143,3 +143,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pt-doc ol { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .pt-doc a:not(.pt-btn) { color: var(--em-700); font-weight: 600; }
 .pt-doc .pt-btn { align-self: flex-start; text-decoration: none; }
+
+/* ── N6 Portal del investigador ── */
+.pt-n6-subir { margin-top: 20px; }
+.pt-n6-subir h2 { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--em-700); margin-bottom: 12px; }
+#pt-n6-form { display: flex; flex-direction: column; gap: 12px; }
+#pt-n6-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; font-weight: 600; }
+#pt-n6-form input, #pt-n6-form select, #pt-n6-form textarea { font-weight: 400; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: 14px; }
+#pt-n6-form small { font-weight: 400; color: var(--muted); font-size: 12px; }
+.pt-n6-items { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.pt-n6-items li { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.pt-n6-ico { font-size: 22px; line-height: 1; flex-shrink: 0; }
+.pt-n6-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13.5px; }
+.pt-n6-txt strong { font-weight: 700; }
+.pt-n6-txt small { color: var(--muted); font-size: 12px; }
+.pt-n6-txt em { color: var(--muted); font-style: normal; font-size: 12.5px; }
+.pt-n6-del { padding: 6px 12px !important; font-size: 12.5px !important; flex-shrink: 0; }

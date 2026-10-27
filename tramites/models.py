@@ -274,6 +274,53 @@ class DriveFolderMap(models.Model):
         return f'{self.folder_name} → {self.tramite_ids}'
 
 
+# ─── Entrega de resultados del investigador (Numeral 6 del Reglamento) ────────
+TIPOS_ENTREGA = [
+    ('informe',     'Informe técnico o de avance'),
+    ('publicacion', 'Publicación científica'),
+    ('datos',       'Base de datos o datos brutos'),
+    ('material',    'Material educativo o divulgativo'),
+    ('otro',        'Otro material entregado'),
+]
+
+MAX_N6_MB = 80
+N6_EXTENSIONS = {'.pdf', '.doc', '.docx', '.csv', '.xls', '.xlsx', '.pptx', '.odt',
+                 '.zip', '.jpg', '.jpeg', '.png', '.txt', '.mp4', '.avi', '.mov'}
+
+
+class EntregaN6(models.Model):
+    """Archivo entregado por el titular (o subido por CONAF) para el Numeral 6.
+    Se guarda en disco bajo INVESTIGACIONES_DIR/_n6/<tramite_id>/."""
+    tramite_id  = models.IntegerField(db_index=True)
+    nombre      = models.CharField(max_length=255)
+    tipo        = models.CharField(max_length=20, choices=TIPOS_ENTREGA, default='informe')
+    descripcion = models.TextField(blank=True)
+    archivo     = models.CharField(max_length=500)   # basename en disco
+    tamano      = models.IntegerField(default=0)     # bytes
+    subido_por  = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, related_name='+')
+    subido_en   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-subido_en']
+
+    def como_dict(self):
+        es_inv = False
+        if self.subido_por_id:
+            try:
+                es_inv = bool(self.subido_por.acceso_investigador)
+            except Exception:
+                pass
+        return {
+            'id': self.id, 'tramite_id': self.tramite_id,
+            'nombre': self.nombre, 'tipo': self.tipo,
+            'tipo_nombre': dict(TIPOS_ENTREGA).get(self.tipo, self.tipo),
+            'descripcion': self.descripcion, 'archivo': self.archivo,
+            'tamano': self.tamano, 'es_investigador': es_inv,
+            'subido_por': (self.subido_por.get_full_name() or self.subido_por.username) if self.subido_por else '',
+            'subido_en': self.subido_en.isoformat() if self.subido_en else None,
+        }
+
+
 # ─── Historial de auditoría (superusuario) ────────────────────────────────────
 ACCIONES_AUDITORIA = [
     ('ajuste_creado',        'Ajuste de estado registrado'),

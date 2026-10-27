@@ -308,9 +308,8 @@ window.Ficha = (() => {
          <div id="fx-registro"><div class="empty-msg">Consultando el portal del investigador…</div></div>`)}
       ${inv ? item('fx-cum-n6', 'Entrega de resultados (Numeral 6 del Reglamento)', piezas.entregaOk ? 'ok' : (plazo && new Date() > plazo ? 'no' : 'espera'),
         `${plazo ? `<p>Plazo: <b>${plazo.toLocaleDateString('es-CL')}</b> (3 años desde el término del trámite).</p>` : '<p>El plazo corre desde que termine el trámite.</p>'}
-         ${piezas.entregados || '<p class="fx-nota">Aún no hay informes, publicaciones ni material entregado en la carpeta de Drive del titular.</p>'}
-         ${puedeSubir ? `<button class="fx-btn" onclick="toggleUploadPanel(${t.id})">Subir lo entregado por el titular</button>
-           <table class="bq-upload"><tbody>${_uploadPanelHtml(t)}</tbody></table>` : ''}
+         ${piezas.entregados || '<p class="fx-nota">Aún no hay informes, publicaciones ni material en la carpeta de Drive del titular.</p>'}
+         <div id="fx-n6"></div>
          <div id="fx-fotos-titular"></div>`) : ''}
       ${sit === 'cierre_solicitante' ? item('fx-cum-cierre', 'Cerrar el trámite en Cero Filas', 'espera',
         '<p>CONAF ya resolvió; falta que el titular confirme la recepción en su cuenta de Cero Filas. No es atraso de CONAF.</p>') : ''}
@@ -490,6 +489,12 @@ window.Ficha = (() => {
       const item = document.getElementById('fx-cum-registro');
       if (item && n) { item.className = 'fx-cum fx-cum--ok'; item.querySelector('.fx-cum-ico').textContent = '✓'; }
     });
+    if (IDS_INVESTIGACION.has(t.proceso_id)) {
+      window.EntregaN6?.montar(t, document.getElementById('fx-n6'), n => {
+        const item = document.getElementById('fx-cum-n6');
+        if (item && n) { item.className = 'fx-cum fx-cum--ok'; item.querySelector('.fx-cum-ico').textContent = '✓'; }
+      });
+    }
     fotosDelTitular(t);
     ajustes(t);
   }
