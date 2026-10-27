@@ -36,19 +36,21 @@ window.Recorrido = (() => {
       { sel: '#btn-refresh', titulo: 'Actualizar',
         texto: 'Trae los datos más recientes desde CeroFilas. Normalmente no lo necesita: la plataforma se mantiene al día sola.' });
     if (secs.includes('resumen_inv') || secs.includes('resumen_film')) L.push(
-      { sel: '#tab-dashboard .kpi-grid', antes: ir('dashboard', tipoResumen), titulo: `Resumen de ${nombreResumen}`,
-        texto: 'Las tarjetas muestran el total de solicitudes, cuántas están en trámite, aprobadas, rechazadas y con plazo vencido.' },
+      { sel: '#atencion .atn-cards', antes: ir('dashboard', tipoResumen), titulo: `Resumen de ${nombreResumen}: lo que requiere atención`,
+        texto: 'Arriba está lo que pide acción hoy: solicitudes atrasadas en CONAF, las que vencen en los próximos 7 días y las que esperan respuesta del solicitante. La frase de arriba resume la situación.' },
+      { sel: '#atencion .atn-card', antes: ir('dashboard', tipoResumen), titulo: 'Detalle a pedido',
+        texto: 'Pulse el botón de una tarjeta para ver la lista en un panel lateral; desde ahí abre cada trámite. Si pulsa una región, la vista se acerca a esa región y agrupa por área protegida.' },
       { sel: '#filtro-regiones', antes: ir('dashboard', tipoResumen), titulo: 'Filtrar por región',
         texto: P.solo_su_region && P.region
           ? `Su perfil muestra solo la región de ${P.region}. Por eso este filtro aparece fijo.`
-          : 'Pulse una región para ver solo sus permisos. Al elegir una región aparece además la presión sobre cada área protegida y un mapa con las coordenadas.' },
-      { sel: '#resumen-visual', antes: ir('dashboard', tipoResumen), titulo: 'Gráficos del Resumen',
-        texto: 'Estado de las solicitudes, ingresos por mes, tiempos de resolución y trámites pendientes por oficina. Si pulsa un área protegida en «Presión», se abre su mapa.' },
-      { sel: '#tabla-vencimientos', antes: ir('dashboard', tipoResumen), titulo: 'Plazos por vencer',
-        texto: 'Lista los permisos cuyo plazo vence pronto o ya venció. Pulse una fila para abrir el detalle completo del trámite.' });
+          : 'Pulse una región para acercarse: las tarjetas pasan a agrupar por área protegida y el mapa territorial muestra sus áreas.' },
+      { sel: '#terr-card', antes: ir('dashboard', tipoResumen), titulo: 'Dónde se concentran los permisos',
+        texto: 'El mapa muestra los permisos activos en cada área protegida. Pulse una burbuja o un área para acercarse: verá cada permiso en el mapa, el calendario de actividades que coinciden y si los sitios de distintos permisos se superponen.' },
+      { sel: '#desempeno', antes: () => { ir('dashboard', tipoResumen)(); const d = document.getElementById('desempeno'); if (d) d.open = true; }, titulo: 'Desempeño del período',
+        texto: 'Las cifras y gráficos (ingresos, tiempos de resolución, pendientes por oficina y regiones) quedan aquí, plegados para no competir con lo urgente. Ábralos cuando necesite el panorama completo.' });
     if (secs.includes('busqueda')) L.push(
-      { sel: '#search-input', antes: ir('busqueda'), titulo: 'Buscar un trámite',
-        texto: 'Escriba el número del trámite, el nombre o correo del solicitante, o el nombre de un área protegida, y pulse «Buscar».' });
+      { sel: '#bq-q', antes: ir('busqueda'), titulo: 'Buscar un trámite',
+        texto: 'Los resultados aparecen mientras escribe, en todos los años y sin importar tildes. Use los filtros de la izquierda (tipo, situación, región, área, tema) y los atajos para encontrar lo urgente.' });
     if (secs.includes('exportar')) L.push(
       { sel: '#btn-descargar-excel', antes: ir('exportar'), titulo: 'Exportar a Excel',
         texto: 'Descarga los trámites en una planilla Excel, con los filtros de estado, tipo y fechas que elija arriba.' });

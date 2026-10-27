@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/Investigaciones /app/gmail_auth /app/fotos_portada /app/staticfiles
+RUN mkdir -p /app/Investigaciones /app/gmail_auth /app/fotos_portada /app/staticfiles /app/cache_adjuntos
 
 EXPOSE 8000
 

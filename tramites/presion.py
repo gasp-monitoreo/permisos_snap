@@ -383,12 +383,80 @@ def presion_region(region, tipo=None):
         lim = limite_de(a['area'], region)
         a['limite'] = _geojson_mapa(lim) if lim else None
         a['limite_nombre'] = lim['nombre'] if lim else None
+        a['km2'] = centro_y_superficie(lim)[1] if lim else None
         a['puntos_fuera'] = 0
-        if lim:
-            for p in a['permisos']:
+        caja = None if lim else _caja_region(region)
+        for p in a['permisos']:
+            if lim:
                 dentro = [pt for pt in p['puntos'] if lim['dentro'].contains(Point(pt[1], pt[0]))]
-                a['puntos_fuera'] += len(p['puntos']) - len(dentro)
-                p['puntos'] = dentro
+            elif caja:   # sin límite oficial: al menos dentro de la región (descarta coordenadas mal escritas)
+                dentro = [pt for pt in p['puntos'] if caja[0] <= pt[0] <= caja[1] and caja[2] <= pt[1] <= caja[3]]
+            else:
+                dentro = p['puntos']
+            a['puntos_fuera'] += len(p['puntos']) - len(dentro)
+            p['puntos'] = dentro
         res.append(a)
     res.sort(key=lambda x: (-x['ejecucion'], -x['activos'], x['area']))
+    return res
+
+
+_cajas_region = {}
+
+
+def _caja_region(region, margen=0.4):
+    """(lat_min, lat_max, lon_min, lon_max) de las áreas protegidas oficiales de la región,
+    con un margen. None si la región no tiene áreas en el archivo de límites."""
+    if region not in _cajas_region:
+        clave = _sin_tildes((region or '').lower()).split()[0] if region else ''
+        cajas = [lim['geom'].bounds for lim in _limites() if clave and clave in lim['region']]
+        _cajas_region[region] = (
+            min(c[1] for c in cajas) - margen, max(c[3] for c in cajas) + margen,
+            min(c[0] for c in cajas) - margen, max(c[2] for c in cajas) + margen,
+        ) if cajas else None
+    return _cajas_region[region]
+
+
+# ─── Vista territorial: escala nacional ───────────────────────────────────────
+def centro_y_superficie(lim):
+    """(lat, lon) de un punto interior del área y su superficie aproximada en km²."""
+    if 'centro' not in lim:
+        import math
+        g = lim['geom']
+        c = g.representative_point()
+        lim['centro'] = (round(c.y, 5), round(c.x, 5))
+        lim['km2'] = round(g.area * 111.32 ** 2 * math.cos(math.radians(c.y)), 1)
+    return lim['centro'], lim['km2']
+
+
+def presion_nacional(tipo=None):
+    """Áreas protegidas de todo el país con permisos activos (en ejecución, programados o
+    en evaluación), con su ubicación y superficie para el mapa nacional."""
+    hoy = date.today()
+    por_region = {}
+    for t in _tramites_recientes():
+        if tipo and _tipo(t) != tipo:
+            continue
+        for region, nombres in areas_por_region(t).items():
+            sit = situacion(t, region, hoy)
+            if not sit:
+                continue
+            areas = por_region.setdefault(region, {})
+            for area in dict.fromkeys(nombres):
+                a = areas.setdefault(area, {'area': area, 'region': region, 'ejecucion': 0, 'programado': 0,
+                                            'evaluacion': 0, 'inv': 0, 'film': 0, 'permisos': []})
+                a[sit] += 1
+                a[_tipo(t)] += 1
+                a['permisos'].append({'id': t['id'], 'situacion': sit, 'tipo': _tipo(t)})
+    res = []
+    for region, areas in por_region.items():
+        for a in _unificar_areas(areas).values():
+            a['activos'] = a['ejecucion'] + a['programado'] + a['evaluacion']
+            a['ids_ejecucion'] = [x['id'] for x in a['permisos'] if x['situacion'] == 'ejecucion']
+            a['ids'] = [x['id'] for x in a['permisos']]
+            a['permisos'] = len(a['permisos'])
+            lim = limite_de(a['area'], region)
+            (lat, lon), km2 = centro_y_superficie(lim) if lim else ((None, None), None)
+            a.update(lat=lat, lon=lon, km2=km2)
+            res.append(a)
+    res.sort(key=lambda x: (-x['activos'], x['area']))
     return res

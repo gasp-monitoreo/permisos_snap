@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CONAF – Iniciar Sesión</title>
+  <title>{% if portal %}Portal del investigador – Permisos SNAP{% else %}CONAF – Iniciar Sesión{% endif %}</title>
   <link rel="icon" href="/static/img/favicon.png" type="image/png" />
   <link rel="stylesheet" href="/static/fonts/fuentes.css">
   <style>
@@ -137,7 +137,7 @@
   <div class="credit" id="credit"></div>
   <div class="visual-body">
     <h1>Mirar, estudiar y registrar lo que protegemos</h1>
-    <p>Plataforma de seguimiento de permisos de investigación, filmación y fotografía en las áreas protegidas de Chile.</p>
+    {% if portal %}<p>Registre dónde trabaja: puntos de muestreo, transectos y parcelas de su permiso. Así su aporte queda en el mapa de las áreas protegidas.</p>{% else %}<p>Plataforma de seguimiento de permisos de investigación, filmación y fotografía en las áreas protegidas de Chile.</p>{% endif %}
     <div class="dots" id="dots"></div>
   </div>
 </section>
@@ -148,8 +148,9 @@
       <img src="/static/img/logo.png" alt="Permisos SNAP" />
     </div>
 
-    <h2>Bienvenido/a</h2>
-    <p class="lead">Ingresa con tu cuenta institucional</p>
+    <h2>{% if portal %}Portal del investigador{% else %}Bienvenido/a{% endif %}</h2>
+    <p class="lead">{% if portal %}Ingrese con el usuario y la clave que le envió CONAF{% else %}Ingresa con tu cuenta institucional{% endif %}</p>
+    {% if vencido %}<div class="error-msg">Su acceso venció o fue revocado. Si necesita seguir registrando datos, pida a CONAF que lo renueve.</div>{% endif %}
 
     {% if form.errors %}
     <div class="error-msg">{% for e in form.non_field_errors.as_data %}{% if e.code == 'bloqueado' %}{{ e.message }}{% else %}Usuario o contraseña incorrectos. Intente nuevamente.{% endif %}{% empty %}Usuario o contraseña incorrectos. Intente nuevamente.{% endfor %}</div>
@@ -158,8 +159,8 @@
     <form method="post">
       {% csrf_token %}
       <div class="form-group">
-        <label for="id_username">Correo electrónico</label>
-        <input type="text" id="id_username" name="username" placeholder="correo@conaf.cl"
+        <label for="id_username">{% if portal %}Usuario{% else %}Correo electrónico{% endif %}</label>
+        <input type="text" id="id_username" name="username" placeholder="{% if portal %}inv12345-ab12{% else %}correo@conaf.cl{% endif %}"
                autocomplete="username" autofocus />
       </div>
       <div class="form-group">
@@ -171,7 +172,7 @@
       <button type="submit" class="btn-submit">Iniciar sesión</button>
     </form>
 
-    <div class="footer-text">Corporación Nacional Forestal – Uso interno</div>
+    <div class="footer-text">Corporación Nacional Forestal – {% if portal %}Acceso temporal para titulares de permisos{% else %}Uso interno{% endif %}</div>
   </div>
 </section>
 

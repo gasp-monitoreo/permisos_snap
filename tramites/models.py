@@ -130,5 +130,91 @@ class PerfilUsuario(models.Model):
             'secciones': self.secciones_visibles(),
             'permisos': {a: self.puede(a) for a in ('ver', 'agregar', 'editar', 'borrar')},
             'superusuario': self.user.is_superuser,
+            've_sensible': self.user.is_superuser or self.puede('editar'),   # Ley N°21.719
             'ver_tutorial': self.ver_tutorial,
+        }
+
+
+# ─── Portal del investigador: registro geográfico de los permisos ─────────────
+class AccesoInvestigador(models.Model):
+    """Acceso temporal de un investigador o productora al portal de registro geográfico.
+
+    Lo genera el superusuario para un trámite y lo envía al solicitante (enlace, usuario
+    y clave). Solo permite ver y editar el registro geográfico de ese trámite: no entra
+    a ninguna otra parte de la plataforma. Vence solo (fin del permiso + 90 días).
+    """
+    user        = models.OneToOneField('auth.User', on_delete=models.CASCADE, related_name='acceso_investigador')
+    tramite_id  = models.IntegerField(unique=True, db_index=True)
+    titulo      = models.TextField(blank=True)                 # copia para listar sin consultar CeroFilas
+    solicitante = models.CharField(max_length=255, blank=True)
+    tipo        = models.CharField(max_length=10, blank=True)  # 'inv' o 'film'
+    areas       = models.JSONField(default=list)
+    regiones    = models.JSONField(default=list)
+    vence       = models.DateField()
+    revocado    = models.BooleanField(default=False)
+    creado_por  = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, related_name='+')
+    creado_en   = models.DateTimeField(auto_now_add=True)
+    ultimo_ingreso = models.DateTimeField(null=True, blank=True)
+
+    def vigente(self):
+        from datetime import date
+        return not self.revocado and self.user.is_active and self.vence >= date.today()
+
+    def como_dict(self):
+        return {
+            'id': self.id, 'tramite_id': self.tramite_id, 'usuario': self.user.username,
+            'titulo': self.titulo, 'solicitante': self.solicitante, 'tipo': self.tipo,
+            'areas': self.areas, 'regiones': self.regiones, 'vence': self.vence.isoformat(),
+            'vigente': self.vigente(), 'revocado': self.revocado,
+            'creado_en': self.creado_en.isoformat() if self.creado_en else None,
+            'ultimo_ingreso': self.ultimo_ingreso.isoformat() if self.ultimo_ingreso else None,
+        }
+
+
+CATEGORIAS_REGISTRO = {
+    'muestreo':  'Punto de muestreo',
+    'camara':    'Cámara trampa',
+    'estacion':  'Estación de monitoreo',
+    'parcela':   'Parcela',
+    'transecto': 'Transecto',
+    'captura':   'Sitio de captura o colecta',
+    'filmacion': 'Locación de filmación o fotografía',
+    'otro':      'Otro',
+}
+
+
+class RegistroGeografico(models.Model):
+    """Punto, línea (transecto) o polígono (parcela) declarado para un permiso.
+    La geometría se guarda como GeoJSON en WGS84 (longitud, latitud)."""
+    TIPOS = [('punto', 'Punto'), ('linea', 'Transecto o línea'), ('poligono', 'Parcela o polígono')]
+    tramite_id  = models.IntegerField(db_index=True)
+    tipo        = models.CharField(max_length=10, choices=TIPOS)
+    geometria   = models.JSONField()
+    nombre      = models.CharField(max_length=200)
+    categoria   = models.CharField(max_length=20, blank=True)
+    metodo      = models.TextField(blank=True)
+    descripcion = models.TextField(blank=True)
+    fecha_inicio = models.DateField(null=True, blank=True)
+    fecha_fin    = models.DateField(null=True, blank=True)
+    atributos   = models.JSONField(default=dict, blank=True)
+    origen      = models.CharField(max_length=200, blank=True)    # 'mapa', 'coordenadas' o nombre del archivo
+    creado_por  = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, related_name='+')
+    creado_en   = models.DateTimeField(auto_now_add=True)
+    modificado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['creado_en']
+
+    def como_feature(self):
+        return {
+            'type': 'Feature', 'id': self.id, 'geometry': self.geometria,
+            'properties': {
+                'id': self.id, 'tramite_id': self.tramite_id, 'tipo': self.tipo, 'nombre': self.nombre,
+                'categoria': self.categoria, 'categoria_nombre': CATEGORIAS_REGISTRO.get(self.categoria, ''),
+                'metodo': self.metodo, 'descripcion': self.descripcion,
+                'fecha_inicio': self.fecha_inicio.isoformat() if self.fecha_inicio else None,
+                'fecha_fin': self.fecha_fin.isoformat() if self.fecha_fin else None,
+                'atributos': self.atributos, 'origen': self.origen,
+                'modificado_en': self.modificado_en.isoformat() if self.modificado_en else None,
+            },
         }

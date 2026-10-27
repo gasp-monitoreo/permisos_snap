@@ -157,6 +157,7 @@
         <button class="btn-secondary btn-sm" id="btn-galeria-gestionar">Gestionar fotos</button>
         {% endif %}
       </div>
+      <div id="galeria-filtros" class="galeria-filtros" role="group" aria-label="Filtrar fotografías por tema"></div>
       <div id="galeria-fotos" class="galeria-grid"><div class="empty-msg">Cargando…</div></div>
     </div>
 
@@ -181,64 +182,57 @@
       <div class="hero-body">
         <span class="hero-eyebrow" data-tipo-text="Investigación|Filmación y Fotografía">Investigación</span>
         <h2 class="hero-title">Panel de control</h2>
-        <p class="hero-sub" data-tipo-text="Estado de los permisos de investigación, avance por región y etapas con vencimiento próximo.|Estado de las solicitudes de filmación y fotografía, avance por región y etapas con vencimiento próximo.">Estado de los permisos de investigación, avance por región y etapas con vencimiento próximo.</p>
+        <p class="hero-sub" data-tipo-text="Lo que requiere atención hoy y, más abajo, el desempeño del período.|Lo que requiere atención hoy y, más abajo, el desempeño del período.">Lo que requiere atención hoy y, más abajo, el desempeño del período.</p>
       </div>
       <div class="hero-credit"></div>
     </div>
 
-    <!-- KPI Cards -->
-    <div class="kpi-grid">
-      <div class="kpi-card kpi-total">
-        <div class="kpi-icon">📁</div>
-        <div class="kpi-value" id="kpi-total">–</div>
-        <div class="kpi-label">Total Trámites</div>
-        <div class="kpi-split" id="kpi-total-split"></div>
-      </div>
-      <div class="kpi-card kpi-pendiente">
-        <div class="kpi-icon">⏳</div>
-        <div class="kpi-value" id="kpi-pendiente">–</div>
-        <div class="kpi-label">Pendientes</div>
-        <div class="kpi-split" id="kpi-pendiente-split"></div>
-      </div>
-      <div class="kpi-card kpi-completado">
-        <div class="kpi-icon">✅</div>
-        <div class="kpi-value" id="kpi-completado">–</div>
-        <div class="kpi-label">Completados</div>
-        <div class="kpi-split" id="kpi-completado-split"></div>
-      </div>
-      <div class="kpi-card kpi-rechazado">
-        <div class="kpi-icon">❌</div>
-        <div class="kpi-value" id="kpi-rechazado">–</div>
-        <div class="kpi-label">Rechazados</div>
-        <div class="kpi-split" id="kpi-rechazado-split"></div>
-      </div>
-      <div class="kpi-card kpi-avance">
-        <div class="kpi-icon">📈</div>
-        <div class="kpi-value" id="kpi-avance">–</div>
-        <div class="kpi-label">Avance Promedio</div>
-        <div class="kpi-split" id="kpi-avance-split"></div>
-      </div>
-      <div class="kpi-card kpi-vencidos">
-        <div class="kpi-icon">🚨</div>
-        <div class="kpi-value" id="kpi-vencidos">–</div>
-        <div class="kpi-label">Con Etapas Vencidas</div>
-        <div class="kpi-split" id="kpi-vencidos-split"></div>
-      </div>
-    </div>
+    <!-- Centro de atención: lo que requiere acción hoy (static/js/atencion.js) -->
+    <section id="atencion" class="atn" aria-label="Requiere atención"></section>
 
-    <!-- Filtro por región (afecta KPIs, gráficos y tablas del Resumen) -->
+    <!-- Filtro por región (cambia la escala: país → región → área protegida) -->
     <div id="filtro-regiones" class="reg-filtro"></div>
 
-    <!-- Vista analítica del tipo activo (static/js/resumen.js) -->
-    <div id="resumen-visual" class="panorama"></div>
+    <!-- Vista territorial: país → región → área protegida (static/js/territorio.js) -->
+    <div id="territorio" class="territorio"></div>
 
-    <!-- Vencimientos próximos -->
-    <div class="section-card">
-      <div class="section-card-title">🚨 Etapas con Vencimiento Próximo (≤ 7 días)</div>
-      <div id="tabla-vencimientos" class="table-wrapper">
-        <div class="empty-msg">Cargando…</div>
+    <!-- Desempeño del período: cifras y gráficos, plegado para no competir con lo urgente -->
+    <details class="desempeno" id="desempeno">
+      <summary>
+        <span class="desempeno-tit">Desempeño del período</span>
+        <span class="desempeno-res" id="desempeno-res"></span>
+        <span class="desempeno-abrir"><span class="cerrado">Ver cifras y gráficos</span><span class="abierto">Ocultar</span></span>
+      </summary>
+      <div class="kpi-grid">
+        <div class="kpi-card kpi-total">
+          <div class="kpi-icon">📁</div>
+          <div class="kpi-value" id="kpi-total">–</div>
+          <div class="kpi-label">Ingresadas</div>
+          <div class="kpi-split" id="kpi-total-split"></div>
+        </div>
+        <div class="kpi-card kpi-completado">
+          <div class="kpi-icon">✅</div>
+          <div class="kpi-value" id="kpi-completado">–</div>
+          <div class="kpi-label">Aprobadas</div>
+          <div class="kpi-split" id="kpi-completado-split"></div>
+        </div>
+        <div class="kpi-card kpi-rechazado">
+          <div class="kpi-icon">❌</div>
+          <div class="kpi-value" id="kpi-rechazado">–</div>
+          <div class="kpi-label">Rechazadas</div>
+          <div class="kpi-split" id="kpi-rechazado-split"></div>
+        </div>
+        <div class="kpi-card kpi-avance">
+          <div class="kpi-icon">⏱️</div>
+          <div class="kpi-value" id="kpi-mediana">–</div>
+          <div class="kpi-label">Días para resolver (mediana)</div>
+          <div class="kpi-split" id="kpi-mediana-split"></div>
+        </div>
       </div>
-    </div>
+
+      <!-- Vista analítica del tipo activo (static/js/resumen.js) -->
+      <div id="resumen-visual" class="panorama"></div>
+    </details>
 
     <!-- Últimos trámites -->
     <div class="section-card">
@@ -263,21 +257,32 @@
       <div class="hero-body">
         <span class="hero-eyebrow">Búsqueda</span>
         <h2 class="hero-title">Buscar trámites</h2>
-        <p class="hero-sub">Por ID, nombre, email del solicitante o área protegida.</p>
+        <p class="hero-sub">En todos los años: por nombre, correo, número, área protegida, especie o tema, con filtros.</p>
       </div>
       <div class="hero-credit"></div>
     </div>
 
-    <div class="search-box-container">
-      <div class="search-input-row">
-        <input type="text" id="search-input" placeholder="Buscar por ID, nombre, email o área protegida…" />
-        <button class="btn-primary" id="btn-buscar">🔍 Buscar</button>
+    <!-- Búsqueda instantánea con filtros (static/js/busqueda.js) -->
+    <div class="bq">
+      <div class="bq-caja">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input type="search" id="bq-q" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="bq-sug"
+               placeholder="Nombre, correo, n.° de trámite, área protegida, especie o tema…" aria-label="Buscar trámites">
+        <kbd title="Pulse / para buscar">/</kbd>
+        <div class="bq-sug" id="bq-sug" role="listbox" hidden></div>
       </div>
-      <div class="search-hint" id="search-hint">Ingrese un ID numérico, nombre, email o nombre de área protegida</div>
-    </div>
-
-    <div id="search-results" class="search-results">
-      <div class="empty-msg">Realice una búsqueda para ver resultados</div>
+      <p class="bq-estado" id="bq-estado"></p>
+      <div class="bq-cuerpo">
+        <aside class="bq-filtros" id="bq-filtros" aria-label="Filtros">
+          <div class="bq-filtros-cab"><strong>Filtros</strong><button id="bq-cerrar-filtros" aria-label="Cerrar filtros">✕</button></div>
+          <div id="bq-filtros-cuerpo"></div>
+        </aside>
+        <section class="bq-zona" id="bq-zona" aria-live="polite">
+          <button class="bq-btn-filtros" id="bq-btn-filtros">Filtros</button>
+          <div id="bq-barra-res"></div>
+          <div id="bq-resultados"><div class="empty-msg">Cargando…</div></div>
+        </section>
+      </div>
     </div>
   </section>
 
@@ -288,7 +293,7 @@
       <div class="hero-body">
         <span class="hero-eyebrow">Exportar</span>
         <h2 class="hero-title">Exportar datos</h2>
-        <p class="hero-sub">Planillas Excel, cumplimiento del Numeral 6 y envío de correos a investigadores.</p>
+        <p class="hero-sub">Planillas Excel y cumplimiento del Numeral 6.</p>
       </div>
       <div class="hero-credit"></div>
     </div>
@@ -361,6 +366,7 @@
       </div>
     </div>
 
+    {% if envio_correos %}
     <div class="export-form-card" style="margin-top:20px">
       <div class="export-form-title">📧 Envío de correos – Numeral 6</div>
       <div class="export-info" style="margin-bottom:14px">
@@ -373,6 +379,7 @@
         </button>
       </div>
     </div>
+    {% endif %}
   </section>
 
 
@@ -495,7 +502,7 @@
 
 <!-- ══════════════════════ MODAL: DETALLE TRÁMITE ══════════════════════ -->
 <div id="modal-tramite" class="modal-overlay" style="display:none">
-  <div class="modal-box">
+  <div class="modal-box modal-box--ficha">
     <div class="modal-header">
       <div class="modal-title" id="modal-tramite-title">Detalle del Trámite</div>
       <button class="modal-close" id="modal-close">✕</button>
@@ -573,6 +580,16 @@
 {% endif %}
 
 {{ perfil|json_script:"perfil-data" }}
+<!-- Detalle a pedido del Centro de atención -->
+<div id="atn-velo" class="atn-velo" hidden></div>
+<aside id="atn-panel" class="atn-panel" role="dialog" aria-labelledby="atn-panel-tit" hidden>
+  <header>
+    <div><h3 id="atn-panel-tit"></h3><p id="atn-panel-sub"></p></div>
+    <button class="atn-cerrar" aria-label="Cerrar panel">✕</button>
+  </header>
+  <div id="atn-panel-lista" class="atn-lista"></div>
+</aside>
+
 <script>window.PERFIL = JSON.parse(document.getElementById('perfil-data').textContent);</script>
 {% if ofrecer_tutorial %}
 <div class="tuto-aviso" id="tuto-aviso" role="dialog" aria-labelledby="tuto-titulo" aria-modal="true">
@@ -596,8 +613,14 @@
 <script src="/static/js/panorama.js"></script>
 <script src="/static/js/resumen.js"></script>
 <script src="/static/js/presion.js"></script>
+<script src="/static/js/territorio.js"></script>
+<script src="/static/js/atencion.js"></script>
+<script src="/static/js/registro.js"></script>
+<script src="/static/js/ficha.js"></script>
+<script src="/static/js/busqueda.js"></script>
 <script src="/static/js/layout.js"></script>
 <script src="/static/js/perfil.js"></script>
+<script src="/static/js/privacidad.js"></script>
 {% if perfil.superusuario %}<script src="/static/js/usuarios.js"></script>{% endif %}
 <script src="/static/js/recorrido.js"></script>
 </body>

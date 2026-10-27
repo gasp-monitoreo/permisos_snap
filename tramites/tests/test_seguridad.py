@@ -1,6 +1,7 @@
 """Pruebas de seguridad y permisos. Corren en CI (GitHub Actions) y localmente con:
     docker compose exec app sh -c "pip install -q -r requirements-dev.txt && pytest -q"
 """
+import json
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -228,3 +229,53 @@ def test_manual_del_superusuario_incluye_administracion():
     assert 'Administrar usuarios' in c.get('/manual/').content.decode()
     assert c.get('/manual/img/usuarios.jpg').status_code == 200
     assert 'Administrar usuarios' not in c.get('/manual/?general=1').content.decode()   # base del PDF
+
+
+# ─── Envío de correos (Numeral 6) desactivado ────────────────────────────────
+@pytest.mark.django_db
+def test_envio_de_correos_desactivado():
+    adm = _usuario('admin@conaf.cl', superusuario=True, secciones=[])
+    c = _cliente(adm)
+    assert 'btn-abrir-correos' not in c.get('/').content.decode()
+    for ruta in ('/api/email/send', '/api/email/draft'):
+        r = c.post(ruta, data={'email': {'to_email': 'x@y.cl'}}, content_type='application/json')
+        assert r.status_code == 403
+
+
+# ─── Búsqueda: índice de todos los años ──────────────────────────────────────
+def _tramite_falso(tid, region):
+    return {'id': tid, 'proceso_id': 517, 'estado': 'pendiente', 'nombre_solicitante': 'Ana Pérez',
+            'email_solicitante': 'ana@u.cl', 'regiones_list': [region], 'areas_protegidas': ['PN Conguillío'],
+            'etapa_actual': {'tarea_nombre': 'Revisión', 'nombres': 'Funcionario Secreto', 'email': 'f@conaf.cl'},
+            'datos_raw': {'titulo_investigacion': 'Aves'}}
+
+
+@pytest.fixture
+def _indice_falso(monkeypatch):
+    import tramites.api as api_mod
+    monkeypatch.setattr(api_mod, '_anios_busqueda',
+                        lambda: ([_tramite_falso(1, 'Araucanía'), _tramite_falso(2, 'Maule')], []))
+
+
+@pytest.mark.django_db
+def test_indice_de_busqueda_respeta_region_y_omite_funcionarios(_indice_falso):
+    import gzip
+    assert Client().get('/api/buscar/indice').status_code == 401
+    enc = _usuario('enc@conaf.cl', region='Maule', solo_su_region=True, secciones=['busqueda'])
+    r = _cliente(enc).get('/api/buscar/indice', HTTP_ACCEPT_ENCODING='gzip')
+    assert r['Content-Encoding'] == 'gzip'
+    cuerpo = gzip.decompress(r.content).decode()
+    datos = json.loads(cuerpo)['data']
+    assert [d['id'] for d in datos] == [2] and 'Funcionario Secreto' not in cuerpo
+    sin = _usuario('sin@conaf.cl', secciones=['portada'])
+    assert _cliente(sin).get('/api/buscar/indice').status_code == 403
+
+
+@pytest.mark.django_db
+def test_excel_de_busqueda_solo_incluye_la_region_del_perfil(_indice_falso, monkeypatch):
+    import tramites.api as api_mod
+    vistos = []
+    monkeypatch.setattr(api_mod, 'build_tramites_excel', lambda ts, m: (vistos.extend(t['id'] for t in ts), __import__('io').BytesIO(b'x'))[1])
+    enc = _usuario('enc@conaf.cl', region='Maule', solo_su_region=True, secciones=['busqueda', 'exportar'])
+    r = _cliente(enc).post('/api/buscar/excel', data={'ids': [1, 2]}, content_type='application/json')
+    assert r.status_code == 200 and vistos == [2]

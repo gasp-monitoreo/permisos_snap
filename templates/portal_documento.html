@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documento del permiso #{{ acceso.tramite_id }} – Permisos SNAP</title>
+  <link rel="icon" href="/static/img/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="/static/fonts/fuentes.css">
+  <link rel="stylesheet" href="/static/css/portal.css">
+</head>
+<body class="pt-doc-body">
+  <main class="pt-doc">
+    <img src="/static/img/logo.png" alt="Permisos SNAP" class="pt-doc-logo">
+    <h1>Este documento se descarga desde Cero Filas</h1>
+    <p>No pudimos traer el documento del permiso #{{ acceso.tramite_id }} desde Cero Filas en este momento.
+      Puede descargarlo desde su propia cuenta:</p>
+    <ol>
+      <li>Ingrese a <a href="https://conaf.cerofilas.gob.cl" target="_blank" rel="noopener">conaf.cerofilas.gob.cl</a> con su ClaveÚnica o su cuenta.</li>
+      <li>Abra «Mis trámites» y busque el número {{ acceso.tramite_id }}.</li>
+      <li>En el detalle del trámite están la resolución y todos los documentos.</li>
+    </ol>
+    <a class="pt-btn" href="/portal/">Volver al portal</a>
+  </main>
+</body>
+</html>

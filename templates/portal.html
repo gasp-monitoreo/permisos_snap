@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Registro geográfico · Permiso #{{ acceso.tramite_id }} – Permisos SNAP</title>
+  <link rel="icon" href="/static/img/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="/static/fonts/fuentes.css">
+  <link rel="stylesheet" href="/static/vendor/leaflet-1.9.4/leaflet.css">
+  <link rel="stylesheet" href="/static/css/portal.css">
+</head>
+<body>
+{% csrf_token %}
+<header class="pt-barra">
+  <img src="/static/img/logo.png" alt="Permisos SNAP" class="pt-logo">
+  <div class="pt-titulo">
+    <span class="pt-eyebrow">Registro geográfico · Permiso #{{ acceso.tramite_id }}</span>
+    <strong title="{{ acceso.titulo }}">{{ acceso.titulo|default:"Permiso en áreas protegidas" }}</strong>
+  </div>
+  <div class="pt-cuenta">
+    <span class="pt-vence">Acceso vigente hasta el {{ acceso.vence|date:"d-m-Y" }}</span>
+    <form method="post" action="/logout/">{% csrf_token %}<button class="pt-btn pt-btn--suave">Salir</button></form>
+  </div>
+</header>
+
+<main class="pt-app">
+  <aside class="pt-lado">
+    <nav class="pt-tabs" role="tablist">
+      <button role="tab" data-tab="permiso" aria-selected="true">Mi permiso</button>
+      <button role="tab" data-tab="registro" aria-selected="false">Registro geográfico</button>
+    </nav>
+    <div class="pt-panel" id="pt-panel" aria-live="polite"></div>
+  </aside>
+  <div class="pt-mapa" id="pt-mapa" role="application" aria-label="Mapa del permiso"></div>
+</main>
+
+{{ datos|json_script:"pt-datos" }}
+<script src="/static/vendor/leaflet-1.9.4/leaflet.js"></script>
+<script src="/static/js/csrf.js"></script>
+<script src="/static/js/portal.js"></script>
+</body>
+</html>

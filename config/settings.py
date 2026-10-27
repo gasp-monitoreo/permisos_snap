@@ -36,6 +36,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'tramites.portal.AislamientoPortalMiddleware',   # cuentas de investigador: solo /portal/
     'tramites.usuarios.CambioClaveMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -161,6 +162,8 @@ CEROFILAS_API_BASE = os.environ.get('CEROFILAS_API_BASE', 'https://conaf.cerofil
 CEROFILAS_TOKEN    = os.environ.get('CEROFILAS_TOKEN',    '')
 GMAIL_REDIRECT_URI = os.environ.get('GMAIL_REDIRECT_URI', 'http://localhost/auth/gmail/callback')
 MYMEMORY_EMAIL     = os.environ.get('MYMEMORY_EMAIL', '')   # opcional: correo para la cuota de traducción
+# Envío de correos a investigadores (Numeral 6): desactivado; ENVIO_CORREOS_ACTIVO=1 lo reactiva
+ENVIO_CORREOS_ACTIVO = os.environ.get('ENVIO_CORREOS_ACTIVO', '0') == '1'
 
 # Ingreso con el correo (sin distinguir mayúsculas)
 AUTHENTICATION_BACKENDS = ['tramites.usuarios.EmailBackend']

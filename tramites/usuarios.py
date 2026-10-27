@@ -99,6 +99,8 @@ class SesionAuth:
         u = getattr(request, 'user', None)
         if not (u and u.is_authenticated and u.is_active):
             return None
+        if hasattr(u, 'acceso_investigador'):
+            return None          # cuentas del portal del investigador: sin acceso a la API interna
         if perfil_de(u).debe_cambiar_password:
             return None          # primero debe definir su clave
         if request.method not in ('GET', 'HEAD', 'OPTIONS'):
@@ -180,7 +182,7 @@ class CambioClaveMiddleware:
 
     def __call__(self, request):
         u = getattr(request, 'user', None)
-        if u and u.is_authenticated and not request.path.startswith(self.PERMITIDAS):
+        if u and u.is_authenticated and not request.path.startswith(self.PERMITIDAS)                 and not hasattr(u, 'acceso_investigador'):
             if perfil_de(u).debe_cambiar_password:
                 if request.path.startswith('/api/'):
                     return JsonResponse({'ok': False, 'cambiar_password': True,

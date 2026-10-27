@@ -714,9 +714,9 @@ function _statsFor(ts) {
   const pendientes = ts.filter(t => t.estado === 'pendiente').length;
   const completados= ts.filter(t => t.estado === 'completado').length;
   const rechazados = ts.filter(t => t.estado === 'rechazado').length;
-  const avgAvance  = total ? Math.round(ts.reduce((s,t) => s + t.porcentaje_avance, 0) / total) : 0;
-  const vencidos   = ts.filter(t => tramiteEsVencido(t)).length;
-  return { total, pendientes, completados, rechazados, avgAvance, vencidos };
+  const dias       = ts.filter(_resueltaConaf).map(calcularDias).filter(d => d !== null);   // resumen.js
+  const mediana    = dias.length ? _mediana(dias) : '–';
+  return { total, pendientes, completados, rechazados, mediana };
 }
 
 function _setSplit(id, inv, film) {
@@ -741,23 +741,22 @@ function renderDashboard() {
   const sf   = _statsFor(films);
 
   $('kpi-total').textContent      = s.total;
-  $('kpi-pendiente').textContent  = s.pendientes;
   $('kpi-completado').textContent = s.completados;
   $('kpi-rechazado').textContent  = s.rechazados;
-  $('kpi-avance').textContent     = s.avgAvance + '%';
-  $('kpi-vencidos').textContent   = s.vencidos;
+  $('kpi-mediana').textContent    = s.mediana;
 
   _setSplit('kpi-total-split',      si.total,      sf.total);
-  _setSplit('kpi-pendiente-split',  si.pendientes,  sf.pendientes);
   _setSplit('kpi-completado-split', si.completados, sf.completados);
   _setSplit('kpi-rechazado-split',  si.rechazados,  sf.rechazados);
-  _setSplit('kpi-avance-split',     si.avgAvance + '%', sf.avgAvance + '%');
-  _setSplit('kpi-vencidos-split',   si.vencidos,    sf.vencidos);
+  _setSplit('kpi-mediana-split',    si.mediana,     sf.mediana);
+  $('desempeno-res').textContent =
+    `${s.total} ingresadas · ${s.completados} aprobadas · ${s.rechazados} rechazadas · mediana ${s.mediana} d`;
 
+  renderAtencion(ts, STATE.region);   // static/js/atencion.js
   renderFiltroRegiones();
+  renderTerritorio(STATE.region || (window.PERFIL?.solo_su_region ? PERFIL.region : null), STATE.tipo);   // static/js/territorio.js
   // La matriz regional siempre muestra todas las regiones del tipo (destacando la elegida)
   renderResumenVisual(ts, f, tramitesDelTipo({ todasLasRegiones: true }), STATE.region);   // static/js/resumen.js
-  renderTablaVencimientos();
   renderTablaRecientes();
   renderDuplicadosSection();
 }
@@ -1456,7 +1455,9 @@ function renderTablaEntregadas(filtroTema) {
     const archivos = archivosDeFolder(data);
     if (!archivos.length) continue;
     const tramite = getTramitePorCarpeta(carpeta);
-    const item    = tramite || {
+    // Los registros de cumplimiento no traen proceso_id: sin él se clasificarían con los temas
+    // de filmación. Las carpetas de entregas del Numeral 6 son de investigación.
+    const item    = (tramite && (tramite.proceso_id ? tramite : { ...tramite, proceso_id: 1992 })) || {
       id: 'carpeta:' + carpeta, proceso_id: 1992,
       titulo_investigacion: archivos.map(a => a.nombre.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')).join(' '),
     };
@@ -1492,6 +1493,11 @@ function renderTablaEntregadas(filtroTema) {
     }
   }
   const temaEfectivo = e => temaCanon.get(e.tema) || e.tema;
+  // Tema por carpeta del investigador en Drive: lo usa el filtro de la galería «Desde el terreno» (layout.js)
+  window.TEMA_POR_CARPETA = new Map(entradas.map(e => [_normInv(e.carpeta.replace(/_/g, ' ')), temaEfectivo(e)]));
+  window.TIPO_POR_CARPETA = new Map(entradas.map(e => [_normInv(e.carpeta.replace(/_/g, ' ')),
+    e.tramite && IDS_FILMACION.has(e.tramite.proceso_id) ? 'film' : 'inv']));
+  document.dispatchEvent(new Event('temas-galeria'));
 
   // 3. Botones de filtro usando temas canónicos
   const filtroEl = $('portada-filtro-tema');
@@ -1636,86 +1642,6 @@ function _avancePorRegion(tramites) {
   return byRegion;
 }
 
-function renderTablaVencimientos() {
-  const hoy = new Date();
-  const seen = new Set();   // evitar duplicados si ya está por etapa Y por fecha_limite
-  const items = [];
-
-  tramitesDelTipo().forEach(t => {
-    if (t.estado === 'rechazado' || t.estado === 'completado') return;
-
-    // 1) Vencimiento por etapa individual
-    (t.etapas || []).forEach(e => {
-      if (e.estado === 'pendiente' && e.fecha_vencimiento) {
-        const fv = new Date(e.fecha_vencimiento);
-        const diff = Math.ceil((fv - hoy) / (1000 * 60 * 60 * 24));
-        if (diff <= 7) {
-          seen.add(t.id);
-          items.push({ tramite: t, fv: e.fecha_vencimiento, diff,
-                       responsable: e.nombres || '–', email: e.email || '–',
-                       origen: 'etapa' });
-        }
-      }
-    });
-
-    // 2) Vencimiento por plazo de proceso (fecha_limite_proceso)
-    if (t.fecha_limite_proceso && !seen.has(t.id)) {
-      const fv = new Date(t.fecha_limite_proceso);
-      const diff = Math.ceil((fv - hoy) / (1000 * 60 * 60 * 24));
-      if (diff <= 7) {
-        seen.add(t.id);
-        const ea = t.etapa_actual || {};
-        items.push({ tramite: t, fv: t.fecha_limite_proceso, diff,
-                     responsable: ea.nombres || '–', email: ea.email || '–',
-                     origen: 'plazo' });
-      }
-    }
-  });
-
-  // Por vencer (diff >= 0) primero ascendente; ya vencidos (diff < 0) al final, más recientes antes
-  items.sort((a, b) => {
-    const upA = a.diff >= 0, upB = b.diff >= 0;
-    if (upA !== upB) return upA ? -1 : 1;
-    if (upA) return a.diff - b.diff;
-    return Math.abs(a.diff) - Math.abs(b.diff);
-  });
-
-  if (!items.length) {
-    $('tabla-vencimientos').innerHTML = '<div class="empty-msg">Sin vencimientos próximos</div>';
-    return;
-  }
-
-  const rows = items.map(({ tramite: t, fv, diff, responsable, email, origen }) => {
-    const rechazado = t.estado === 'rechazado';
-    const clase = rechazado ? 'row-rechazado' : diff < 0 ? 'row-vencido' : 'row-pendiente';
-    const diffLabel = diff < 0 ? `⚠️ Vencido hace ${-diff}d` : diff === 0 ? '🔴 Hoy' : `⏰ En ${diff}d`;
-    const origenLabel = origen === 'plazo'
-      ? `<span title="Plazo máximo del proceso (${tipoTramite(t)})" style="font-size:10px;color:#888">📋 plazo proceso</span>`
-      : '';
-    return `
-      <tr class="${clase}">
-        <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
-        <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente, tramite: t })}</td>
-        <td>${tipoBadgeHtml(t)}</td>
-        <td>${escHtml(t.nombre_solicitante || '–')}</td>
-        <td>${regionMiniMapHtml(t)}</td>
-        <td>${escHtml(responsable)}</td>
-        <td>${escHtml(email)}</td>
-        <td><strong>${diffLabel}</strong>${origenLabel}</td>
-        <td>${formatDate(fv)}</td>
-      </tr>`;
-  }).join('');
-
-  $('tabla-vencimientos').innerHTML = `
-    <table>
-      <thead><tr>
-        <th>ID</th><th>Estado</th><th>Tipo</th><th>Solicitante</th>
-        <th>Regiones</th><th>Responsable</th><th>Email</th><th>Tiempo</th><th>Vencimiento</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
-
 function renderTablaRecientes() {
   const ahora = new Date();
   const hace3meses = new Date(ahora);
@@ -1834,58 +1760,6 @@ function renderDuplicadosSection() {
 }
 
 // ─── BÚSQUEDA ─────────────────────────────────────────────────────────────────
-async function ejecutarBusqueda() {
-  const query = $('search-input').value.trim();
-  if (!query) return;
-
-  let resultados = [];
-
-  // Auto-detectar tipo de búsqueda
-  const esId    = /^\d{6,}$/.test(query);                 // solo dígitos, ≥6 → ID
-  const esEmail = query.includes('@');                     // contiene @ → email
-
-  if (esId) {
-    // Búsqueda por ID: llama al endpoint individual (más completo)
-    showLoading('Buscando trámite…');
-    try {
-      const t = await loadTramite(parseInt(query));
-      resultados = [t];
-    } catch {
-      resultados = [];
-    } finally {
-      hideLoading();
-    }
-  } else {
-    // Normaliza texto: minúsculas + sin tildes
-    const norm = s => (s || '').toLowerCase()
-      .normalize('NFD').replace(/[̀-ͯ]/g, '');
-
-    const tokens = norm(query).split(/\s+/).filter(Boolean);
-
-    resultados = STATE.tramites.filter(t => {
-      if (esEmail) {
-        // Para email: todos los tokens deben aparecer en el email
-        const emailTexto = norm(t.email_solicitante) + ' ' +
-          (t.etapas || []).map(e => norm(e.email)).join(' ');
-        return tokens.every(tok => emailTexto.includes(tok));
-      }
-      // Búsqueda general: construir texto combinado y verificar que todos
-      // los tokens aparezcan en algún lugar (orden libre, sin tildes)
-      const texto = [
-        t.nombre_solicitante,
-        t.email_solicitante,
-        String(t.id),
-        ...(t.regiones_list || []),
-        ...(t.areas_protegidas || []),
-        ...(t.etapas || []).flatMap(e => [e.email, e.nombres]),
-      ].map(norm).join(' ');
-      return tokens.every(tok => texto.includes(tok));
-    });
-  }
-
-  renderSearchResults(resultados, query);
-}
-
 // ─── Upload de archivos de investigación ─────────────────────────────────────
 
 function _normCarpetaNombre(nombre) {
@@ -2045,81 +1919,6 @@ async function invSubirArchivos(tramiteId, nombre, carpeta) {
     if (status) status.textContent = '❌ Error de red: ' + e.message;
   }
 }
-
-function renderSearchResults(tramites, query, hint = '') {
-  if (!tramites.length) {
-    $('search-results').innerHTML = `<div class="empty-msg">No se encontraron trámites para "<strong>${escHtml(query)}</strong>" ${escHtml(hint)}</div>`;
-    return;
-  }
-
-  const CONAF_BASE = 'https://conaf.cerofilas.gob.cl/backend/seguimiento';
-  const rows = tramites.flatMap(t => {
-    const esInv = IDS_INVESTIGACION.has(t.proceso_id);
-    const auth  = t.archivo_autorizacion;
-    const etapaId = t.etapa_autorizacion_id;
-    const conafUrl = etapaId
-      ? `${CONAF_BASE}/ver_etapa/${etapaId}`
-      : `${CONAF_BASE}/ver/${t.id}`;
-    const authBtn = auth
-      ? `<a class="btn-auth-dl" href="${safeUrl(conafUrl)}" target="_blank" rel="noopener">📄 Ver en CONAF</a>`
-      : `<span style="color:#aaa;font-size:12px">–</span>`;
-
-    // Botón de archivos solo para investigaciones
-    let archivosCell = '<td><span style="color:var(--muted);font-size:12px">–</span></td>';
-    if (esInv) {
-      const carpeta = _carpetaExistenteParaInv(t.nombre_solicitante || '') || _normCarpetaNombre(t.nombre_solicitante || '');
-      const archExist = _archivosExistentesPorId(carpeta, t.id);
-      const count = archExist.length;
-      archivosCell = `<td>
-        <button id="btn-archivos-${t.id}"
-                class="btn-archivos ${count > 0 ? 'btn-archivos--tiene' : ''}"
-                onclick="toggleUploadPanel(${t.id})"
-                title="${count > 0 ? count + ' archivo(s) – click para gestionar' : 'Sin archivos – click para agregar'}">
-          📁 ${count > 0 ? count : '+'}
-        </button>
-      </td>`;
-    }
-
-    const mainRow = `
-    <tr>
-      <td><button class="btn-detalle" onclick="openModal(${t.id})">#${t.id}</button></td>
-      <td>${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente, tramite: t })}</td>
-      <td>${tipoBadgeHtml(t)}</td>
-      <td>${escHtml(nombreProceso(t.proceso_id).slice(0, 40))}</td>
-      <td>${escHtml(t.nombre_solicitante || '–')}</td>
-      <td>${escHtml(t.email_solicitante || '–')}</td>
-      <td>${regionMiniMapHtml(t)}</td>
-      <td>${progressHtml(t.porcentaje_avance)}</td>
-      <td>${formatDate(t.fecha_inicio)}</td>
-      <td>${formatDate(t.fecha_termino)}</td>
-      <td>${authBtn}</td>
-      ${archivosCell}
-    </tr>`;
-
-    return [mainRow, _uploadPanelHtml(t)];
-  }).join('');
-
-  $('search-results').innerHTML = `
-    <div style="padding:12px 16px;background:#f8f9fa;border-bottom:1px solid #dee2e6;font-weight:700;color:#2E7D32">
-      ${tramites.length} resultado${tramites.length !== 1 ? 's' : ''} para "${escHtml(query)}"
-      ${hint ? `<span style="font-weight:400;font-size:12px;color:#666;margin-left:8px">${escHtml(hint)}</span>` : ''}
-    </div>
-    <table>
-      <thead><tr>
-        <th>ID</th><th>Estado</th><th>Tipo</th><th>Proceso</th>
-        <th>Solicitante</th><th>Email</th><th>Regiones</th>
-        <th style="min-width:120px">Avance</th><th>Inicio</th><th>Término</th>
-        <th>Autorización</th><th>📁 Archivos</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
-
-window.toggleUploadPanel = toggleUploadPanel;
-window.invHandleDrop     = invHandleDrop;
-window.invHandleFiles    = invHandleFiles;
-window.invSubirArchivos  = invSubirArchivos;
-window._removeFile       = _removeFile;
 
 // ─── MODAL DETALLE ────────────────────────────────────────────────────────────
 async function openModal(tramiteId) {
@@ -2484,67 +2283,6 @@ function renderModalBody(t) {
       return `<div class="modal-kv-item"><span class="label">${escHtml(label)}</span><span class="value">${escHtml(display)}</span></div>`;
     }).join('');
 
-  // ── Adjuntos ────────────────────────────────────────────────────────────────
-  const CONAF_SEG = 'https://conaf.cerofilas.gob.cl/backend/seguimiento';
-  const authEtapaId = t.etapa_autorizacion_id;
-
-  // Botón prominente de autorización final (si existe)
-  const authFileKey = Object.keys(datos).find(k => /autori|aprob|firmad|resolu/i.test(k) && isAdjuntoUrl(datos[k]));
-  const authBtnModal = authFileKey ? `
-    <div class="modal-section" style="background:#E3F2FD;border:2px solid #1565C0;border-radius:8px;padding:14px 18px;margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span style="font-size:22px">📋</span>
-        <div style="flex:1">
-          <div style="font-weight:700;color:#1565C0;font-size:14px">Autorización / Resolución Final</div>
-          <div style="font-size:12px;color:#555;margin-top:2px">Archivo: ${escHtml(datos[authFileKey])}</div>
-        </div>
-        <a class="btn-auth-dl" href="${safeUrl(authEtapaId ? `${CONAF_SEG}/ver_etapa/${authEtapaId}` : `${CONAF_SEG}/ver/${t.id}`)}"
-           target="_blank" rel="noopener">📄 Ver en CONAF</a>
-      </div>
-    </div>` : '';
-
-  const adjuntosHtml = adjuntos.length ? `
-    <div class="modal-section">
-      <h3>Archivos Adjuntos <span style="font-size:11px;font-weight:400;color:#888">(se abren en CONAF — requiere sesión)</span></h3>
-      <div class="adjuntos-grid">
-        ${adjuntos.map(([k, valor]) => {
-          const { nombre, icono } = adjuntoNombreDesdeKey(k);
-          const ext = adjuntoExtension(valor);
-          // Los archivos se sirven a través de CONAF autenticado → abrir tramite en CONAF
-          const conafUrl = authEtapaId && /autori|aprob|firmad|resolu/i.test(k)
-            ? `${CONAF_SEG}/ver_etapa/${authEtapaId}`
-            : `${CONAF_SEG}/ver/${t.id}`;
-          return `<a class="btn-adjunto" href="${safeUrl(conafUrl)}" target="_blank" rel="noopener" title="${escHtml(valor)}">
-            <span class="adjunto-icono">${icono}</span>
-            <span class="adjunto-nombre">${escHtml(nombre)}</span>
-            <span class="badge-ext">${escHtml(ext)}</span>
-          </a>`;
-        }).join('')}
-      </div>
-    </div>` : '';
-
-  // ── Etapas — ordenar por ID ascendente: la más antigua (solicitante) = Etapa 1 ─
-  const etapasOrdenadas = [...(t.etapas || [])].sort((a, b) => (a.id || 0) - (b.id || 0));
-  const etapasHtml = etapasOrdenadas.map((e, i) => {
-    const vencida = e.estado === 'pendiente' && isVencida(e.fecha_vencimiento);
-    const clase   = `etapa-item etapa-${e.estado || 'otro'} ${vencida ? 'etapa-vencida' : ''}`;
-    return `
-      <div class="${escHtml(clase)}">
-        <div class="etapa-header">
-          <span class="etapa-nombre">Etapa ${i + 1} – ID #${escHtml(e.id)}</span>
-          ${badgeHtml(e.estado)}
-        </div>
-        <div class="etapa-usuario">👤 ${escHtml(e.nombres || 'Sin asignar')} &nbsp;|&nbsp; ✉️ ${escHtml(e.email || '–')}</div>
-        <div class="etapa-fechas">
-          Inicio: ${formatDate(e.fecha_inicio)} &nbsp;|&nbsp;
-          Término: ${formatDate(e.fecha_termino)} &nbsp;|&nbsp;
-          Vencimiento: ${e.fecha_vencimiento
-            ? `<strong style="color:${vencida ? '#C0392B' : '#155724'}">${formatDate(e.fecha_vencimiento)}${vencida ? ' ⚠️ VENCIDA' : ''}</strong>`
-            : '–'}
-        </div>
-      </div>`;
-  }).join('');
-
   // ── EMAIL con link ──────────────────────────────────────────────────────────
   const emailHtml = t.email_solicitante
     ? `<a href="${safeUrl('mailto:' + t.email_solicitante)}">${escHtml(t.email_solicitante)}</a>`
@@ -2607,27 +2345,15 @@ function renderModalBody(t) {
       </div>
     </div>` : '';
 
-  // ── Render completo ─────────────────────────────────────────────────────────
-  $('modal-tramite-body').innerHTML = borradorBannerHtml + duplicadoBannerHtml + `
-
-    <!-- 1. INFORMACIÓN GENERAL -->
-    <div class="modal-section">
-      <h3>Información General</h3>
-      <div class="modal-kv">
-        <div class="modal-kv-item"><span class="label">ID</span><span class="value fw-bold">#${t.id}</span></div>
-        <div class="modal-kv-item"><span class="label">Estado</span><span class="value">${badgeHtml(t.estado, { recepcionPendiente: t.recepcion_pendiente, tramite: t })}</span></div>
-        <div class="modal-kv-item"><span class="label">Proceso</span><span class="value">${escHtml(nombreProceso(t.proceso_id))}</span></div>
-        <div class="modal-kv-item"><span class="label">Tipo</span><span class="value">${tipoBadgeHtml(t)}</span></div>
-        <div class="modal-kv-item"><span class="label">Fecha Inicio</span><span class="value">${formatDateTime(t.fecha_inicio)}</span></div>
-        <div class="modal-kv-item"><span class="label">Fecha Modificación</span><span class="value">${formatDateTime(t.fecha_modificacion)}</span></div>
-        <div class="modal-kv-item"><span class="label">Fecha Término</span><span class="value">${formatDateTime(t.fecha_termino)}</span></div>
-        <div class="modal-kv-item"><span class="label">Región</span><span class="value">${escHtml(t.region || '–')}</span></div>
-        ${t.estado === 'rechazado' && t.motivo_rechazo ? `
-        <div class="modal-kv-item modal-kv-item--full"><span class="label">Motivo del rechazo (CONAF)</span>
-          <span class="value motivo-rechazo">${escHtml(t.motivo_rechazo)}</span></div>` : ''}
-      </div>
-    </div>
-
+  // ── Ficha (static/js/ficha.js): las piezas del formulario se arman aquí ──────
+  const invEntregas = getArchivosTramite(t.id, t.nombre_solicitante || '');
+  const piezas = {
+    banners: borradorBannerHtml + duplicadoBannerHtml,
+    adjuntos,
+    regiones: tablaRegionesHtml,
+    nEntregados: invEntregas ? invEntregas.archivos.length : 0,
+    entregaOk: !!(invEntregas && invEntregas.archivos.length),
+    solicitudHtml: `
     <!-- 2. DATOS DEL SOLICITANTE -->
     <div class="modal-section">
       <h3>Datos del Solicitante</h3>
@@ -2694,44 +2420,13 @@ function renderModalBody(t) {
     })()}
     ` : ''}
 
-    <!-- 3. PROGRESO DEL TRÁMITE -->
-    <div class="modal-section">
-      <h3>Progreso del Trámite</h3>
-      <div style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-          <span>${escHtml(t.etapas_completadas)} de ${escHtml(t.total_etapas)} etapas completadas</span>
-          <strong>${escHtml(t.porcentaje_avance)}%</strong>
-        </div>
-        <div class="progress-bar-wrap" style="height:14px">
-          <div class="progress-bar-fill" style="width:${escHtml(t.porcentaje_avance)}%"></div>
-        </div>
-      </div>
-    </div>
 
-    <!-- 4. ETAPAS DEL PROCESO -->
-    <div class="modal-section">
-      <h3>Etapas del Proceso</h3>
-      <div class="etapas-timeline">
-        ${etapasHtml || '<div class="empty-msg">Sin etapas registradas</div>'}
-      </div>
-    </div>
-
-    <!-- 5. REGIONES Y ÁREAS PROTEGIDAS -->
-    ${tablaRegionesHtml}
-
-    <!-- 6. DATOS ADICIONALES -->
     ${datosAdicionalesHtml ? `
     <div class="modal-section">
-      <h3>Datos Adicionales</h3>
+      <h3>Otros datos del formulario</h3>
       <div class="modal-kv">${datosAdicionalesHtml}</div>
-    </div>` : ''}
-
-    <!-- 7. AUTORIZACIÓN FINAL -->
-    ${authBtnModal}
-
-    <!-- 8. ARCHIVOS ADJUNTOS -->
-    ${adjuntosHtml}
-
+    </div>` : ''}`,
+    entregados: `
     <!-- 9. ARCHIVOS INVESTIGACIONES (Numeral 6) -->
     ${(() => {
       const inv = getArchivosTramite(t.id, t.nombre_solicitante || '');
@@ -2754,6 +2449,8 @@ function renderModalBody(t) {
   </div>`;
     })()}
 
+`,
+    cumplimiento: `
     <!-- 10. CUMPLIMIENTO INVESTIGACIÓN (solo para trámites de investigación) -->
     ${(() => {
       const IDS_INV = new Set([517, 692, 1992]);
@@ -2810,7 +2507,10 @@ function renderModalBody(t) {
       </div>
     </div>
   </div>`;
-    })()}`;
+    })()}`,
+  };
+  $('modal-tramite-body').innerHTML = Ficha.html(t, piezas);
+  Ficha.activar(t);
 }
 
 // ─── HISTORIAL INVESTIGACIONES ────────────────────────────────────────────────
@@ -3174,8 +2874,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  $('btn-buscar').addEventListener('click', ejecutarBusqueda);
-  $('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') ejecutarBusqueda(); });
 
   // Modal close
   $('modal-close').addEventListener('click', () => { $('modal-tramite').style.display = 'none'; });
@@ -3195,7 +2893,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Correos modal
-  $('btn-abrir-correos').addEventListener('click', abrirModalCorreos);
+  $('btn-abrir-correos')?.addEventListener('click', abrirModalCorreos);   // sección desactivable (ENVIO_CORREOS_ACTIVO)
   $('modal-correos-close').addEventListener('click', () => { $('modal-correos').style.display = 'none'; });
   $('modal-correos').addEventListener('click', e => { if (e.target === $('modal-correos')) $('modal-correos').style.display = 'none'; });
   $('preview-close').addEventListener('click', () => { $('correos-preview').style.display = 'none'; });

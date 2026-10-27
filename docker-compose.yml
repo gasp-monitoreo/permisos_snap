@@ -32,6 +32,7 @@ services:
       - ./Investigaciones:/app/Investigaciones
       - ./gmail_auth:/app/gmail_auth
       - ./fotos_portada:/app/fotos_portada
+      - cache_adjuntos:/app/cache_adjuntos   # adjuntos traídos de Cero Filas (temporal, 7 días)
     depends_on:
       db:
         condition: service_healthy
@@ -59,5 +60,6 @@ services:
 
 volumes:
   postgres_data:
+  cache_adjuntos:
   caddy_data:
   caddy_config:

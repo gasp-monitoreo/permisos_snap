@@ -100,6 +100,43 @@
     }
   }
 
+  // ── Galería «Desde el terreno»: orden aleatorio, rotación continua y filtro por tema ──
+  const N_GALERIA = 12, ROTAR_MS = 3500;
+  const quieto = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let filtroGaleria = '', tipoGaleria = '', visibles = [], rotador = null, pausada = false;
+  const temaDeFoto = f => window.TEMA_POR_CARPETA?.get(_normInv(f.investigador)) || null;
+  const tipoDeFoto = f => window.TIPO_POR_CARPETA?.get(_normInv(f.investigador)) || 'inv';
+  const TIPOS_GALERIA = [['', 'Todas'], ['inv', 'Investigación'], ['film', 'Filmación y fotografía']];
+  const barajar = lista => {
+    const a = [...lista];
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  };
+  const delTipo = () => tipoGaleria ? fotos.filter(f => tipoDeFoto(f) === tipoGaleria) : fotos;
+  const candidatas = () => filtroGaleria ? delTipo().filter(f => temaDeFoto(f) === filtroGaleria) : delTipo();
+  const itemGaleria = f => `<a class="galeria-item" href="${driveUrl(f)}" target="_blank" rel="noopener" title="${esc(f.documento)}">
+      <img src="${f.url}" alt="" loading="lazy">
+      <span class="galeria-cap"><strong>${esc(f.investigador)}</strong>${esc(temaDeFoto(f) || f.documento)}</span>
+    </a>`;
+
+  function pintarFiltros() {
+    const el = $('galeria-filtros');
+    if (!el) return;
+    if (!window.TEMA_POR_CARPETA) { el.innerHTML = ''; return; }
+    const porTipo = k => fotos.filter(f => !k || tipoDeFoto(f) === k).length;
+    const tipos = TIPOS_GALERIA.filter(([k]) => porTipo(k));
+    const cuenta = new Map();
+    delTipo().forEach(f => { const t = temaDeFoto(f); if (t) cuenta.set(t, (cuenta.get(t) || 0) + 1); });
+    if (filtroGaleria && !cuenta.has(filtroGaleria)) filtroGaleria = '';
+    const temas = [...cuenta.entries()].sort((x, y) => y[1] - x[1]);
+    el.innerHTML = `
+      <div class="galeria-tipos">${tipos.map(([k, nombre]) =>
+        `<button class="${k === tipoGaleria ? 'activo' : ''}" data-tipo-galeria="${k}" aria-pressed="${k === tipoGaleria}">${nombre} <span class="galeria-n">${porTipo(k)}</span></button>`).join('')}</div>
+      <div class="galeria-temas">${[['', delTipo().length], ...temas].map(([t, n]) =>
+        `<button class="tema-filter-btn ${t === filtroGaleria ? 'tema-filter-btn--active' : ''}" data-tema-galeria="${esc(t)}" aria-pressed="${t === filtroGaleria}">
+          ${esc(t || 'Todos los temas')} <span class="galeria-n">${n}</span></button>`).join('')}</div>`;
+  }
+
   function pintarGaleria() {
     const el = $('galeria-fotos');
     const invs = new Set(fotos.map(f => f.investigador));
@@ -112,12 +149,58 @@
         : '<div class="empty-msg">Aún no hay fotos disponibles.</div>';
       return;
     }
-    el.innerHTML = fotos.slice(0, 12).map(f => `
-      <a class="galeria-item" href="${driveUrl(f)}" target="_blank" rel="noopener" title="${esc(f.documento)}">
-        <img src="${f.url}" alt="" loading="lazy">
-        <span class="galeria-cap"><strong>${esc(f.investigador)}</strong>${esc(f.documento)}</span>
-      </a>`).join('');
+    pintarFiltros();
+    visibles = barajar(candidatas()).slice(0, N_GALERIA);
+    el.innerHTML = visibles.map(itemGaleria).join('');
+    iniciarRotacion();
   }
+
+  // Cada pocos segundos una foto se reemplaza por otra que no está a la vista
+  function rotar() {
+    if (pausada || document.hidden || quieto.matches) return;
+    const reserva = candidatas().filter(f => !visibles.includes(f));
+    const el = $('galeria-fotos');
+    if (!reserva.length || !el.children.length) return;
+    const i = Math.floor(Math.random() * visibles.length);
+    const nueva = reserva[Math.floor(Math.random() * reserva.length)];
+    const viejo = el.children[i];
+    const img = new Image();
+    img.onload = () => {        // se cambia recién cuando la imagen nueva está cargada
+      if (!viejo.isConnected) return;
+      viejo.classList.add('saliendo');
+      setTimeout(() => {
+        if (!viejo.isConnected) return;
+        const t = document.createElement('template');
+        t.innerHTML = itemGaleria(nueva).trim();
+        const nuevo = t.content.firstChild;
+        nuevo.classList.add('entrando');
+        viejo.replaceWith(nuevo);
+        visibles[i] = nueva;
+      }, 450);
+    };
+    img.src = nueva.url;
+  }
+
+  function iniciarRotacion() {
+    clearInterval(rotador);
+    if (candidatas().length > N_GALERIA) rotador = setInterval(rotar, ROTAR_MS);
+  }
+
+  const galeria = $('galeria-fotos');
+  galeria.addEventListener('mouseenter', () => { pausada = true; });
+  galeria.addEventListener('mouseleave', () => { pausada = false; });
+  galeria.addEventListener('focusin', () => { pausada = true; });
+  galeria.addEventListener('focusout', () => { pausada = false; });
+  $('galeria-filtros')?.addEventListener('click', e => {
+    const tipo = e.target.closest('[data-tipo-galeria]');
+    const tema = e.target.closest('[data-tema-galeria]');
+    if (tipo) { tipoGaleria = tipo.dataset.tipoGaleria; filtroGaleria = ''; }
+    else if (tema) filtroGaleria = tema.dataset.temaGaleria;
+    else return;
+    pintarGaleria();
+  });
+  // los temas llegan cuando app.js termina de clasificar las investigaciones entregadas
+  document.addEventListener('temas-galeria', () => { if (fotos.length) pintarFiltros(); });
 
   async function cargarFotos() {
     try {

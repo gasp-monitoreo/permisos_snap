@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documento protegido – Permisos SNAP</title>
+  <link rel="icon" href="/static/img/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="/static/fonts/fuentes.css">
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #F5F3EC; font-family: 'DM Sans', system-ui, sans-serif; color: #0E2219; padding: 20px; box-sizing: border-box; }
+    main { max-width: 560px; background: #fff; border: 1px solid #E4E1D5; border-radius: 16px; padding: 28px 30px; }
+    h1 { font-size: 20px; margin: 0 0 10px; }
+    p { font-size: 14.5px; line-height: 1.6; margin: 0 0 10px; }
+    .tachado { filter: blur(1.4px); background: #111; color: #111; border-radius: 3px; padding: 0 3px; text-decoration: line-through; }
+    small { color: #5F6B62; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>🔒 Documento protegido</h1>
+    <p>{{ mensaje }}</p>
+    <p><b>Protección de datos.</b> Conforme a la <b>Ley N°21.719</b> de Protección de Datos Personales y a la Ley Marco de
+      Ciberseguridad (N°21.663), la información sensible (RUT, correos, teléfonos, coordenadas exactas) se muestra
+      <span class="tachado">█████</span> difuminada y tachada para usuarios no autorizados.
+      Los documentos de identidad y los que no se pueden tachar de forma segura no se entregan.</p>
+    <p><small>Si necesita el documento completo para el trámite #{{ tramite_id }}, pida al administrador de la plataforma el permiso «Editar».</small></p>
+  </main>
+</body>
+</html>

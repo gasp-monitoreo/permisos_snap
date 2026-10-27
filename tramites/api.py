@@ -5,6 +5,7 @@ import logging
 import os
 import re as _re
 import unicodedata
+import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional
@@ -30,6 +31,7 @@ INV_EXTENSIONS = {'.pdf', '.doc', '.docx', '.csv', '.xls', '.xlsx'}
 DOMAIN        = 'https://conaf.cerofilas.gob.cl'
 
 from .usuarios import SesionAuth, perfil_de, requiere
+from . import privacidad
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +120,7 @@ def get_tramites(
             desde, hasta = tramites_cache.rango_anios(created_at_start, created_at_end)
             forzar = fresco and perfil_de(request.user).puede('editar')
             entrada = tramites_cache.obtener(desde, hasta, forzar=forzar)
-            data = _filtrar_region(request, entrada['data'])
+            data = privacidad.tramites(request, _filtrar_region(request, entrada['data']))
             return {'ok': True, 'data': data, 'total': len(data),
                     'actualizado_en': datetime.fromtimestamp(entrada['ts']).isoformat()}
 
@@ -137,6 +139,7 @@ def get_tramites(
         )
         normalized = [normalize_tramite(t) for t in raw]
         normalized = _filtrar_region(request, [t for t in normalized if es_tramite_visible(t)])
+        normalized = privacidad.tramites(request, normalized)
         return {'ok': True, 'data': normalized, 'total': len(normalized)}
     except Exception as e:
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=500)
@@ -150,7 +153,7 @@ def get_tramite(request, tramite_id: int):
         norm = normalize_tramite(t)
         if not _filtrar_region(request, [norm]):
             return api.create_response(request, {'ok': False, 'error': 'Trámite fuera de su región.'}, status=403)
-        return {'ok': True, 'data': norm}
+        return {'ok': True, 'data': privacidad.tramites(request, [norm])[0]}
     except _requests.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=status)
@@ -172,7 +175,7 @@ def cache_refresh(request):
 @api.get('/portada/historico')
 def portada_historico(request):
     try:
-        data = _filtrar_region(request, get_portada_historico_data())
+        data = privacidad.tramites(request, _filtrar_region(request, get_portada_historico_data()))
         return {'ok': True, 'data': data, 'total': len(data)}
     except Exception as e:
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=500)
@@ -184,7 +187,7 @@ def portada_historico(request):
 def compliance_investigacion(request):
     try:
         resultados, revisados = get_compliance_data()
-        resultados = _filtrar_region(request, resultados)
+        resultados = privacidad.tramites(request, _filtrar_region(request, resultados))
         return {'ok': True, 'data': resultados, 'total': len(resultados),
                 'candidatos_revisados': revisados}
     except Exception as e:
@@ -211,7 +214,7 @@ def export_excel(
             ended_at_start=ended_at_start, ended_at_end=ended_at_end,
         )
         tramites = [normalize_tramite(t) for t in raw]
-        tramites = [t for t in tramites if es_tramite_visible(t)]
+        tramites = privacidad.tramites(request, _filtrar_region(request, [t for t in tramites if es_tramite_visible(t)]))
         if estado:
             tramites = [t for t in tramites if t['estado'] == estado]
 
@@ -242,7 +245,7 @@ def export_excel(
 def export_compliance_excel(request):
     try:
         resultados, _ = get_compliance_data()
-        buf      = build_compliance_excel(resultados)
+        buf      = build_compliance_excel(privacidad.tramites(request, _filtrar_region(request, resultados)))
         filename = f"incumplimiento_numeral6_{datetime.now().strftime('%Y%m%d')}.xlsx"
         resp = HttpResponse(
             buf.read(),
@@ -260,6 +263,7 @@ def _candidatos_archivo(archivo, tramite_id=''):
     TOKEN = settings.CEROFILAS_TOKEN
     API   = settings.CEROFILAS_API_BASE
     return [c for c in [
+        f'{DOMAIN}/uploads/datos/{archivo}',            # donde Cero Filas publica los adjuntos
         f'{DOMAIN}/backend/storage/{archivo}',
         f'{DOMAIN}/backend/storage/app/public/{archivo}',
         f'{DOMAIN}/storage/{archivo}',
@@ -303,6 +307,7 @@ def _descargar_url(url):
 
 
 @api.get('/adjunto')
+@requiere(superusuario=True)
 def descargar_adjunto(
     request,
     url: Optional[str]      = None,
@@ -398,7 +403,7 @@ def search_by_area(
                 if r:
                     results.append(r)
 
-    results = _filtrar_region(request, [t for t in results if es_tramite_visible(t)])
+    results = privacidad.tramites(request, _filtrar_region(request, [t for t in results if es_tramite_visible(t)]))
     results.sort(key=lambda x: x.get('fecha_inicio') or '', reverse=True)
     return {'ok': True, 'data': results, 'total': len(results),
             'searched': len(tramite_ids), 'year_from': year_from, 'year_to': year_to}
@@ -409,6 +414,8 @@ def search_by_area(
 @api.post('/email/send')
 @requiere(accion='agregar', seccion='exportar')
 def send_email_route(request):
+    if not settings.ENVIO_CORREOS_ACTIVO:
+        return api.create_response(request, {'ok': False, 'error': 'El envío de correos está desactivado.'}, status=403)
     import smtplib
     data = request.body and __import__('json').loads(request.body) or {}
     smtp = data.get('smtp', {})
@@ -443,6 +450,8 @@ def gmail_auth_status(request):
 @api.post('/email/draft')
 @requiere(accion='agregar', seccion='exportar')
 def create_draft_route(request):
+    if not settings.ENVIO_CORREOS_ACTIVO:
+        return api.create_response(request, {'ok': False, 'error': 'El envío de correos está desactivado.'}, status=403)
     data = request.body and __import__('json').loads(request.body) or {}
     em   = data.get('email', {})
     if not GMAIL_AVAILABLE:
@@ -504,7 +513,7 @@ def presion_areas(request, region: str, tipo: Optional[str] = None):
     if tipo not in (None, 'inv', 'film'):
         return api.create_response(request, {'ok': False, 'error': 'tipo debe ser inv o film'}, status=400)
     try:
-        return {'ok': True, 'region': region, 'tipo': tipo, 'data': presion_region(region, tipo)}
+        return {'ok': True, 'region': region, 'tipo': tipo, 'data': _proteger_areas(request, presion_region(region, tipo))}
     except Exception as e:
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=500)
 
@@ -936,4 +945,328 @@ def usuarios_planilla(request):
                         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = f'attachment; filename="Permisos_SNAP_usuarios_{_dt.now():%Y-%m-%d_%H%M}.xlsx"'
     resp['Cache-Control'] = 'no-store'
+    return resp
+
+
+# ── Portal del investigador: accesos y registro geográfico ────────────────────
+
+@api.post('/accesos')
+@requiere(superusuario=True)
+def accesos_generar(request):
+    """Genera (o renueva) el acceso temporal del solicitante de un trámite.
+    La clave solo se entrega en esta respuesta."""
+    from .portal import generar_acceso
+    try:
+        tid = int(_cuerpo(request).get('tramite_id'))
+        data = api_get(f'/tramites/{tid}')
+        t = normalize_tramite(data.get('tramite', data))
+    except (TypeError, ValueError):
+        return api.create_response(request, {'ok': False, 'error': 'Número de trámite no válido.'}, status=400)
+    except Exception:
+        log.exception('No se pudo obtener el trámite %s para generar acceso', _cuerpo(request).get('tramite_id'))
+        return api.create_response(request, {'ok': False, 'error': 'No se pudo consultar el trámite en Cero Filas.'}, status=502)
+    if not t.get('id'):
+        return api.create_response(request, {'ok': False, 'error': 'Trámite no encontrado.'}, status=404)
+    acc, clave = generar_acceso(t, request.user)
+    enlace = request.build_absolute_uri('/portal/ingresar')
+    return {'ok': True, 'acceso': acc.como_dict(), 'clave': clave, 'enlace': enlace}
+
+
+@api.get('/accesos')
+@requiere(superusuario=True)
+def accesos_listar(request):
+    from .models import AccesoInvestigador, RegistroGeografico
+    from django.db.models import Count
+    n = dict(RegistroGeografico.objects.values_list('tramite_id').annotate(c=Count('id')))
+    accs = AccesoInvestigador.objects.select_related('user').order_by('-creado_en')
+    return {'ok': True, 'data': [{**a.como_dict(), 'registros': n.get(a.tramite_id, 0)} for a in accs]}
+
+
+@api.post('/accesos/{acceso_id}/revocar')
+@requiere(superusuario=True)
+def accesos_revocar(request, acceso_id: int):
+    from .models import AccesoInvestigador
+    from .portal import revocar_acceso
+    acc = AccesoInvestigador.objects.filter(pk=acceso_id).first()
+    if not acc:
+        return api.create_response(request, {'ok': False, 'error': 'Acceso no encontrado.'}, status=404)
+    revocar_acceso(acc)
+    return {'ok': True, 'acceso': acc.como_dict()}
+
+
+def _registros_visibles(request, tramite_id):
+    """Registros del trámite si el perfil puede ver su región (None si no)."""
+    from .models import AccesoInvestigador, RegistroGeografico
+    reg = _region_forzada(request)
+    if reg:
+        acc = AccesoInvestigador.objects.filter(tramite_id=tramite_id).first()
+        if not acc or reg not in (acc.regiones or []):
+            return None
+    return RegistroGeografico.objects.filter(tramite_id=tramite_id)
+
+
+@api.get('/tramites/{tramite_id}/registro-geografico')
+def registro_geografico(request, tramite_id: int):
+    from .models import AccesoInvestigador
+    regs = _registros_visibles(request, tramite_id)
+    if regs is None:
+        return api.create_response(request, {'ok': False, 'error': 'Trámite fuera de su región.'}, status=403)
+    acc = AccesoInvestigador.objects.filter(tramite_id=tramite_id).first()
+    feats = [r.como_feature() for r in regs]
+    if not privacidad.ve_sensible(request.user):
+        feats = [privacidad.feature(f) for f in feats]
+    return {'ok': True, 'type': 'FeatureCollection', 'features': feats,
+            'acceso': acc.como_dict() if acc and request.user.is_superuser else None}
+
+
+@api.get('/tramites/{tramite_id}/registro-geografico.geojson')
+def registro_geografico_descarga(request, tramite_id: int):
+    from .portal import geojson_descarga
+    regs = _registros_visibles(request, tramite_id)
+    if regs is None:
+        return api.create_response(request, {'ok': False, 'error': 'Trámite fuera de su región.'}, status=403)
+    return geojson_descarga(tramite_id, regs, proteger=not privacidad.ve_sensible(request.user))
+
+
+# ── Vista territorial: país → región → área protegida ─────────────────────────
+
+def _superposiciones(permisos, registros):
+    """Pares de permisos cuyos registros geográficos se tocan (parcelas o transectos que se
+    cruzan, o puntos a menos de ~100 m): señal de posible interferencia entre estudios."""
+    from shapely.geometry import shape
+    geoms = [(r.tramite_id, shape(r.geometria).buffer(0.001 if r.tipo == 'punto' else 0)) for r in registros]
+    pares = set()
+    for i, (a, ga) in enumerate(geoms):
+        for b, gb in geoms[i + 1:]:
+            if a != b and (min(a, b), max(a, b)) not in pares and ga.intersects(gb):
+                pares.add((min(a, b), max(a, b)))
+    return [{'a': a, 'b': b} for a, b in sorted(pares)]
+
+
+def _proteger_areas(request, areas):
+    """Sin rol Editor: coordenadas aproximadas (~1 km) y textos sin datos personales."""
+    if privacidad.ve_sensible(request.user):
+        return areas
+    import copy
+    areas = copy.deepcopy(areas)
+    for a in areas:
+        for p in a.get('permisos', []):
+            p['puntos'] = privacidad.puntos(p.get('puntos') or [])
+            p['titulo'] = privacidad.redactar(p.get('titulo') or '')
+            p['registros'] = [privacidad.feature(f) for f in p.get('registros') or []]
+    return areas
+
+
+@api.get('/territorio')
+def territorio(request, tipo: Optional[str] = None, region: Optional[str] = None):
+    """Concentración de permisos activos. Sin región: todas las áreas del país (centro y
+    superficie). Con región: sus áreas con límite, permisos, coordenadas declaradas, el
+    registro geográfico del portal del investigador y las superposiciones entre permisos."""
+    from django.core.cache import cache
+    from .models import RegistroGeografico
+    from .presion import presion_nacional, presion_region
+    if tipo not in (None, 'inv', 'film'):
+        return api.create_response(request, {'ok': False, 'error': 'tipo debe ser inv o film'}, status=400)
+    forzada = _region_forzada(request)
+    if forzada and region != forzada:
+        return api.create_response(request, {'ok': False, 'error': 'Solo puede consultar su región.'}, status=403)
+    try:
+        if not region:
+            clave = f'territorio:nac:v3:{tipo}:{datetime.now():%Y%m%d%H}'
+            datos = cache.get(clave)
+            if datos is None:
+                datos = presion_nacional(tipo)
+                cache.set(clave, datos, 3600)
+            return {'ok': True, 'escala': 'pais', 'tipo': tipo, 'areas': datos}
+        areas = presion_region(region, tipo)
+    except Exception:
+        log.exception('Error al calcular la vista territorial (%s, %s)', region, tipo)
+        return api.create_response(request, {'ok': False, 'error': 'No se pudo calcular la vista territorial.'}, status=500)
+    ids = {p['id'] for a in areas for p in a['permisos']}
+    regs = {}
+    for r in RegistroGeografico.objects.filter(tramite_id__in=ids):
+        regs.setdefault(r.tramite_id, []).append(r)
+    for a in areas:
+        propios = [r for p in a['permisos'] for r in regs.get(p['id'], [])]
+        for p in a['permisos']:
+            p['registros'] = [r.como_feature() for r in regs.get(p['id'], [])]
+        a['superposiciones'] = _superposiciones(a['permisos'], propios)
+    return {'ok': True, 'escala': 'region', 'tipo': tipo, 'region': region, 'areas': _proteger_areas(request, areas)}
+
+
+# ── Búsqueda: índice de todos los años ────────────────────────────────────────
+BUSQUEDA_DESDE = 2019
+_CAMPOS_TEXTO = ('objetivos_del_proyecto', 'descripcion', 'descripcion_proyecto', 'segmentos_proyecto',
+                 'objetivo_general', 'objetivos_especificos', 'actividades', 'actividades_a_realizar',
+                 'palabras_clave', 'especie', 'especies', 'nombre_cientifico', 'nombre_comun',
+                 'tipo_investigacion', 'linea_investigacion')
+
+
+def _anios_busqueda():
+    """Trámites de cada año desde BUSQUEDA_DESDE, solo de los años ya en caché. Los que
+    faltan se descargan en segundo plano (la primera vez tardan) y se informan."""
+    from . import tramites_cache as tc
+    hoy = datetime.now(tc.TZ).year
+    datos, pendientes = [], []
+    for a in range(BUSQUEDA_DESDE, hoy + 1):
+        entrada = tc.cache.get(tc._clave(a, a))
+        if entrada is None:
+            tc._refrescar_en_segundo_plano(a, a)
+            pendientes.append(a)
+            continue
+        if time.time() - entrada['ts'] > tc.FRESCO_SEG:
+            tc._refrescar_en_segundo_plano(a, a)
+        datos.extend(entrada['data'])
+    return datos, pendientes
+
+
+def _registro_busqueda(t, con_registro):
+    from .core import extract_titulo
+    d = t.get('datos_raw') or {}
+    ea = t.get('etapa_actual') or {}
+    texto = ' '.join(str(d.get(k)) for k in _CAMPOS_TEXTO if d.get(k))
+    return {
+        'id': t['id'], 'proceso_id': t.get('proceso_id'), 'estado': t.get('estado'),
+        'recepcion_pendiente': t.get('recepcion_pendiente'), 'suspendido': t.get('suspendido'),
+        'espera_solicitante': t.get('espera_solicitante'),
+        'fecha_inicio': t.get('fecha_inicio'), 'fecha_resolucion': t.get('fecha_resolucion'),
+        'fecha_termino': t.get('fecha_termino'), 'fecha_modificacion': t.get('fecha_modificacion'),
+        'fecha_limite_proceso': t.get('fecha_limite_proceso'),
+        'nombre_solicitante': t.get('nombre_solicitante') or '', 'email_solicitante': t.get('email_solicitante') or '',
+        'titulo_investigacion': (extract_titulo(d) or '')[:400],
+        'texto_clasificacion': texto[:800],
+        'areas_protegidas': t.get('areas_protegidas') or [], 'regiones_list': t.get('regiones_list') or [],
+        # sin nombres de funcionarios: solo la etapa, su plazo y si está en CONAF
+        'etapa_actual': {'tarea_nombre': ea.get('tarea_nombre'), 'fecha_vencimiento': ea.get('fecha_vencimiento'),
+                         'fecha_inicio': ea.get('fecha_inicio'), 'email': ea.get('email') or ''} if ea else None,
+        'etapas_completadas': t.get('etapas_completadas'),
+        'porcentaje_avance': t.get('porcentaje_avance'),
+        'archivo_autorizacion': bool(t.get('archivo_autorizacion')), 'etapa_autorizacion_id': t.get('etapa_autorizacion_id'),
+        'tiene_registro': t['id'] in con_registro,
+    }
+
+
+@api.get('/buscar/indice')
+@requiere(seccion='busqueda')
+def buscar_indice(request):
+    """Registros livianos de todos los años para buscar y filtrar en el navegador."""
+    import gzip
+    from django.core.cache import cache
+    from .models import RegistroGeografico
+    reg = _region_forzada(request) or 'todas'
+    protegido = not privacidad.ve_sensible(request.user)
+    clave = f'buscar:indice:v2:{reg}:{"protegido" if protegido else "completo"}'
+    cuerpo = cache.get(clave)
+    if cuerpo is None:
+        datos, pendientes = _anios_busqueda()
+        datos = _filtrar_region(request, [t for t in datos if es_tramite_visible(t)])
+        if protegido:
+            datos = [privacidad.tramite(t) for t in datos]
+        con_registro = set(RegistroGeografico.objects.values_list('tramite_id', flat=True).distinct())
+        vistos, registros = set(), []
+        for t in datos:
+            if t['id'] not in vistos:
+                vistos.add(t['id'])
+                registros.append(_registro_busqueda(t, con_registro))
+        cuerpo = gzip.compress(_json.dumps({'ok': True, 'data': registros, 'pendientes': pendientes,
+                                            'desde': BUSQUEDA_DESDE}, ensure_ascii=False).encode())
+        if not pendientes:        # incompleto: no se guarda, para reintentar cuando terminen las descargas
+            cache.set(clave, cuerpo, 600)
+    if 'gzip' in request.headers.get('Accept-Encoding', ''):
+        resp = HttpResponse(cuerpo, content_type='application/json')
+        resp['Content-Encoding'] = 'gzip'
+    else:
+        resp = HttpResponse(gzip.decompress(cuerpo), content_type='application/json')
+    resp['Vary'] = 'Accept-Encoding, Cookie'
+    resp['Cache-Control'] = 'private, max-age=300'
+    return resp
+
+
+@api.post('/buscar/excel')
+@requiere(seccion='exportar')
+def buscar_excel(request):
+    """Excel con los trámites de una búsqueda (lista de IDs), respetando la región del perfil."""
+    try:
+        ids = {int(i) for i in (_cuerpo(request).get('ids') or [])[:5000]}
+    except (TypeError, ValueError):
+        return api.create_response(request, {'ok': False, 'error': 'Lista de trámites no válida.'}, status=400)
+    datos, _ = _anios_busqueda()
+    vistos, tramites = set(), []
+    for t in _filtrar_region(request, datos):
+        if t['id'] in ids and t['id'] not in vistos and es_tramite_visible(t):
+            vistos.add(t['id'])
+            tramites.append(t)
+    buf = build_tramites_excel(privacidad.tramites(request, tramites), {})
+    resp = HttpResponse(buf.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="busqueda_{datetime.now():%Y%m%d_%H%M}.xlsx"'
+    return resp
+
+
+# ── Adjuntos servidos por la plataforma (sin cuenta en Cero Filas) ────────────
+
+def _tramite_con_acceso(request, tramite_id):
+    """Trámite si el perfil puede verlo; si no, la respuesta de error."""
+    from .adjuntos import tramite_vivo
+    try:
+        t = tramite_vivo(tramite_id)
+    except Exception:
+        log.exception('No se pudo consultar el trámite %s', tramite_id)
+        return None, api.create_response(request, {'ok': False, 'error': 'No se pudo consultar el trámite en Cero Filas.'}, status=502)
+    if not t.get('id') or not es_tramite_visible(t):
+        return None, api.create_response(request, {'ok': False, 'error': 'Trámite no encontrado.'}, status=404)
+    if not _filtrar_region(request, [t]):
+        return None, api.create_response(request, {'ok': False, 'error': 'Trámite fuera de su región.'}, status=403)
+    return t, None
+
+
+@api.get('/tramites/{tramite_id}/adjuntos.zip')
+def adjuntos_zip(request, tramite_id: int):
+    from .adjuntos import adjuntos_de, zip_tramite
+    t, err = _tramite_con_acceso(request, tramite_id)
+    if err:
+        return err
+    if not adjuntos_de(t):
+        return api.create_response(request, {'ok': False, 'error': 'El trámite no tiene adjuntos.'}, status=404)
+    resp = HttpResponse(zip_tramite(t, request.user, proteger=not privacidad.ve_sensible(request.user)), content_type='application/zip')
+    resp['Content-Disposition'] = f'attachment; filename="adjuntos_{int(tramite_id)}.zip"'
+    return resp
+
+
+@api.get('/tramites/{tramite_id}/adjuntos/{clave}')
+def adjunto(request, tramite_id: int, clave: str):
+    from .adjuntos import AdjuntoError, es_adjunto, respuesta
+    t, err = _tramite_con_acceso(request, tramite_id)
+    if err:
+        return err
+    archivo = (t.get('datos_raw') or {}).get(clave)
+    if not es_adjunto(archivo):
+        return api.create_response(request, {'ok': False, 'error': 'Adjunto no encontrado.'}, status=404)
+    try:
+        return respuesta(tramite_id, clave, archivo, request.user, proteger=not privacidad.ve_sensible(request.user))
+    except AdjuntoError as e:
+        if e.status == 403:      # se abre en una pestaña o en el visor: página legible con el aviso legal
+            from django.shortcuts import render
+            return render(request, 'dato_protegido.html', {'mensaje': str(e), 'tramite_id': tramite_id}, status=403)
+        return api.create_response(request, {'ok': False, 'error': str(e)}, status=e.status)
+
+
+@api.post('/buscar/resoluciones.zip')
+@requiere(seccion='exportar')
+def buscar_resoluciones_zip(request):
+    """ZIP con las resoluciones de una lista de trámites (máx. 150), respetando la región del perfil."""
+    from .adjuntos import MAX_ZIP_TRAMITES, zip_resoluciones
+    try:
+        ids = [int(i) for i in (_cuerpo(request).get('ids') or [])]
+    except (TypeError, ValueError):
+        return api.create_response(request, {'ok': False, 'error': 'Lista de trámites no válida.'}, status=400)
+    pedidos = set(ids[:MAX_ZIP_TRAMITES])
+    datos, _ = _anios_busqueda()
+    vistos, tramites = set(), []
+    for t in _filtrar_region(request, datos):
+        if t['id'] in pedidos and t['id'] not in vistos and es_tramite_visible(t):
+            vistos.add(t['id'])
+            tramites.append(t)
+    resp = HttpResponse(zip_resoluciones(privacidad.tramites(request, tramites), request.user,
+                                         proteger=not privacidad.ve_sensible(request.user)), content_type='application/zip')
+    resp['Content-Disposition'] = f'attachment; filename="resoluciones_{datetime.now():%Y%m%d_%H%M}.zip"'
     return resp

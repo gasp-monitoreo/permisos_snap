@@ -10,9 +10,13 @@ services:
       - ./Investigaciones:/app/Investigaciones
       - ./gmail_auth:/app/gmail_auth
       - ./fotos_portada:/app/fotos_portada
+      - cache_adjuntos:/app/cache_adjuntos   # adjuntos traídos de Cero Filas (temporal, 7 días)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/salud"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 120s   # al arrancar precarga 3 años de trámites y el índice de Drive
+
+volumes:
+  cache_adjuntos:

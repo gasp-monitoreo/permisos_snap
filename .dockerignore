@@ -34,3 +34,4 @@ app.py
 *.pem
 gmail_token.json
 gmail_credentials.json
+cache_adjuntos
