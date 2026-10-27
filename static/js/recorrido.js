@@ -47,7 +47,11 @@ window.Recorrido = (() => {
       { sel: '#terr-card', antes: ir('dashboard', tipoResumen), titulo: 'Dónde se concentran los permisos',
         texto: 'El mapa también cambia el ámbito: pulse una región o un área protegida para acercar todo el panel. Dentro de un área verá el calendario de actividades y si los sitios de distintos permisos se superponen.' },
       { sel: '#desempeno', antes: () => { ir('dashboard', tipoResumen)(); const d = document.getElementById('desempeno'); if (d) d.open = true; }, titulo: 'Desempeño del período',
-        texto: 'Las cifras y gráficos (ingresos, tiempos de resolución, pendientes por oficina y regiones) quedan aquí, plegados para no competir con lo urgente. Ábralos cuando necesite el panorama completo.' });
+        texto: 'Las cifras y gráficos (ingresos, tiempos de resolución, pendientes por oficina y regiones) quedan aquí, plegados para no competir con lo urgente. Ábralos cuando necesite el panorama completo.' },
+      { antes: ir('dashboard', tipoResumen), titulo: 'Ver el detalle de un trámite',
+        texto: 'Pulse cualquier número de trámite (como <strong>#37856800</strong>) en una tabla o en el panel lateral para abrir su ficha completa. La ventana tiene pestañas: <em>Resumen</em>, <em>Solicitud completa</em>, <em>Territorio</em>, <em>Seguimiento CONAF</em>, <em>Documentos</em>, <em>Cumplimiento del titular</em> y <em>Relacionados</em>.' },
+      { titulo: 'Cumplimiento del titular',
+        texto: 'La pestaña <strong>Cumplimiento del titular</strong> tiene dos bloques:<br><br><strong>Registro geográfico:</strong> genere un acceso temporal para que el investigador marque sus sitios de muestreo, transectos y parcelas directamente en el mapa de la plataforma.<br><br><strong>Entrega de resultados (Numeral 6):</strong> registre los informes, publicaciones y datos que el investigador debe entregar a CONAF según el Reglamento. Puede generarle acceso para que los suba él mismo, o cargarlos directamente como funcionario CONAF. Ambas acciones requieren el permiso <em>Editar</em> en el perfil.' });
     if (secs.includes('busqueda')) L.push(
       { sel: '#bq-q', antes: ir('busqueda'), titulo: 'Buscar un trámite',
         texto: 'Los resultados aparecen mientras escribe, en todos los años y sin importar tildes. Use los filtros de la izquierda (tipo, situación, región, área, tema) y los atajos para encontrar lo urgente.' });
