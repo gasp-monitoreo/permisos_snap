@@ -2239,3 +2239,21 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
 @media (max-width: 760px) { .fx-aj-form { grid-template-columns: 1fr; } }
 .fx-aj-error { grid-column: 1 / -1; background: #FDF0EE; border: 1px solid #F2C7C0; color: #9B2C1F; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
 #usr-form textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font: 13.5px "DM Sans", sans-serif; }
+
+/* ── Portada: gráficos que filtran «Permisos de la selección» (panorama.js) ── */
+#panorama [data-pfil], #panorama [data-pcelda] { cursor: pointer; transition: opacity .15s, box-shadow .15s; }
+#panorama .fil-off { opacity: .32; }
+#panorama .fil-off:hover { opacity: .6; }
+#panorama .pano-col.fil-sel .pano-col-stack { box-shadow: 0 0 0 2.5px var(--em-950); border-radius: 4px; }
+#panorama .pano-col.fil-sel .pano-col-lbl, #panorama .hm-y.fil-sel { font-weight: 700; color: var(--em-950); }
+#panorama .pano-reg.fil-sel, #panorama .hm-tema.fil-sel { background: var(--em-50); box-shadow: inset 3px 0 0 var(--em-600); border-radius: 6px; }
+#panorama .pano-kpi.fil-sel { box-shadow: 0 0 0 2px var(--em-600); }
+#panorama .hm-c.hm-sel { outline: 2.5px solid var(--em-950); outline-offset: -1px; }
+#panorama [data-pcelda]:hover { outline: 2px solid var(--em-700); outline-offset: -1px; }
+#panorama .hm-tema[data-pfil]:hover, #panorama .pano-reg:hover { background: var(--surface2); }
+#panorama [data-pfil]:focus-visible, #panorama [data-pcelda]:focus-visible { outline: 2px solid var(--em-600); outline-offset: 2px; }
+.pano-ley { background: none; border: 0; padding: 2px 4px; font: inherit; color: inherit; cursor: pointer; border-radius: 6px; }
+.pano-ley:hover { background: var(--surface2); }
+.pano-aviso { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 120; background: var(--em-900); color: #fff; border: 0;
+  border-radius: 99px; padding: 11px 20px; font: 600 14px 'DM Sans', sans-serif; box-shadow: 0 10px 30px rgba(0,0,0,.25); cursor: pointer; }
+.res-tabla thead th, .res-tabla thead th:not(:first-child) { text-align: left; }
