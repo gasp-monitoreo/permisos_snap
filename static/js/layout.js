@@ -137,16 +137,9 @@
           ${esc(t || 'Todos los temas')} <span class="galeria-n">${n}</span></button>`).join('')}</div>`;
   }
 
-  // Cifras del encabezado de la Portada y fecha de la última búsqueda de fotos
+  // Fecha de la última búsqueda de fotos (bajo el título de la galería)
   function pintarCifras() {
-    const invs = new Set(fotos.map(f => f.investigador));
-    const entregas = typeof STATE !== 'undefined' ? Object.keys(STATE.investigaciones || {}).length : 0;
     const act = jobFotos?.actualizado ? new Date(jobFotos.actualizado).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) : '';
-    $('hero-chips-portada').innerHTML = fotos.length
-      ? `<span class="hero-chip" title="Fotos visibles en la galería">${fotos.length} fotografías</span>
-         <span class="hero-chip" title="Investigaciones con al menos una foto visible">de ${invs.size} investigaciones</span>
-         ${entregas ? `<span class="hero-chip" title="Investigaciones con informes entregados en Drive">${entregas} con entregas</span>` : ''}`
-      : '';
     const nota = $('galeria-actualizada');
     if (nota) nota.textContent = act ? `Fotos actualizadas el ${act}${jobFotos?.pendientes ? ` · ${jobFotos.pendientes} documentos nuevos en revisión` : ''} · se buscan nuevas automáticamente cada 6 horas` : '';
   }
