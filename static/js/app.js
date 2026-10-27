@@ -787,14 +787,10 @@ const areaCoincide = (x, a) => { const n = _normInv(x), m = _normInv(a); return 
 // multirregional no debe aportar áreas de otras regiones). Sin región: todas.
 function areasEnRegion(t, region) {
   if (!region) return t.areas_protegidas || [];
-  // Con desglose por región (backend lo construye de region_de_<x> o region_N/area_N): usar esos
+  // Con desglose estructurado por región (region_de_<x> o region_N/area_N): usar esas áreas exactas
   const porRegion = t.areas_region?.[region];
   if (porRegion?.length) return porRegion;
-  // Si hay desglose para OTRAS regiones, no mezclar (este permiso no declaró áreas para esta región)
-  const tieneOtras = t.areas_region
-    && Object.values(t.areas_region).some(arr => arr.length > 0);
-  if (tieneOtras) return [];
-  // Sin ningún desglose: mostrar todas las áreas del permiso en esta región
+  // Sin desglose para esta región: mostrar todas las áreas del permiso (están en esta región)
   if ((t.regiones_list || []).includes(region)) return t.areas_protegidas || [];
   return [];
 }
