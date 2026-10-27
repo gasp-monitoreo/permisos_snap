@@ -498,12 +498,12 @@ function _resAreas(ts, region) {
 // ─── Entrada ──────────────────────────────────────────────────────────────────
 // ts: trámites del tipo ya filtrados por región · tsTipo: todas las regiones (para la matriz)
 function renderResumenVisual(ts, tipo, tsTipo = ts, region = null, repintado = false) {
-  const root = document.getElementById('resumen-visual');
+  const root   = document.getElementById('resumen-visual');
+  const estado = document.getElementById('resumen-estado');
   if (!root) return;
   const desde = parseInt(document.getElementById('rango-desde').value, 10);
   const hasta = parseInt(document.getElementById('rango-hasta').value, 10);
   const nombreTipo = tipo === 'film' ? 'Filmación y fotografía' : 'Investigación';
-  // un cambio de región, tipo o rango reinicia los filtros de los gráficos
   const firma = `${tipo}|${region}|${STATE.area}|${STATE.mio}|${desde}|${hasta}`;
   if (!repintado && root.dataset.firma !== firma) { _resLimpiarFiltros(); root.dataset.firma = firma; }
   _resUltimo = [ts, tipo, tsTipo, region];
@@ -517,30 +517,33 @@ function renderResumenVisual(ts, tipo, tsTipo = ts, region = null, repintado = f
   const filtrados = sin(null);
   root.dataset.ids = JSON.stringify(filtrados.filter(RES_VISTAS[_resVista][1]).map(t => t.id));
   const scrollY = window.scrollY;
+  // Estado de solicitudes → antes del mapa (#resumen-estado)
+  if (estado) estado.innerHTML = _resEstado(sin('sit'), nombreTipo, region);
+  // Métricas → después del mapa (#resumen-visual)
   root.innerHTML = `
-    ${_resEstado(sin('sit'), nombreTipo, region)}
     <div class="pano-grid">${_resIngresos(sin('periodo'), desde, hasta)}${_resTiempos(sin('tramo'))}</div>
     <div class="pano-grid res-grid-b${STATE.area ? ' res-grid-uno' : ''}">${_resBandeja(sin('oficina'))}${!region ? _resRegiones(tsTipo, null) : STATE.area ? '' : _resAreas(ts, region)}</div>
     ${_resTabla(filtrados, ts.length)}`;
   if (repintado) window.scrollTo({ top: scrollY });
-  if (!root.dataset.listo) {
-    _activarInteraccion(root);
-    root.addEventListener('click', _resClic);
-    root.addEventListener('keydown', e => {
+  // Interacción: ambos contenedores responden a clics/filtros
+  for (const el of [estado, root].filter(Boolean)) {
+    if (el.dataset.listo) continue;
+    if (el === root) _activarInteraccion(root);
+    el.addEventListener('click', _resClic);
+    el.addEventListener('keydown', e => {
       if (e.key === 'Enter' && e.target.closest('[data-fil], tr[data-abrir]') && !e.target.closest('.res-reg')) {
         e.preventDefault();
         e.target.click();
       }
     });
-    // Clic (o Enter) en una fila de la matriz regional = mismo filtro que los botones
     const elegir = e => {
       const fila = e.target.closest('.res-reg[data-region]');
       if (fila) return setRegion(fila.dataset.region);
       const area = e.target.closest('.res-reg[data-area]');
       if (area) { setArea(area.dataset.area); document.getElementById('filtro-regiones')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
     };
-    root.addEventListener('click', elegir);
-    root.addEventListener('keydown', e => { if (e.key === 'Enter') elegir(e); });
-    root.dataset.listo = '1';
+    el.addEventListener('click', elegir);
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') elegir(e); });
+    el.dataset.listo = '1';
   }
 }
