@@ -201,6 +201,9 @@
   galeria.addEventListener('mouseleave', () => { pausada = false; });
   galeria.addEventListener('focusin', () => { pausada = true; });
   galeria.addEventListener('focusout', () => { pausada = false; });
+  // Función pública para que archivos entregados y panorama actualicen la galería
+  window.setFiltroGaleria = tema => { filtroGaleria = tema || ''; pintarGaleria(); };
+
   $('galeria-filtros')?.addEventListener('click', e => {
     const tipo = e.target.closest('[data-tipo-galeria]');
     const tema = e.target.closest('[data-tema-galeria]');
@@ -208,6 +211,16 @@
     else if (tema) filtroGaleria = tema.dataset.temaGaleria;
     else return;
     pintarGaleria();
+    // Sincronizar archivos entregados y panorama al cambiar tema en la galería
+    if (tema) {
+      window.renderTablaEntregadas?.(filtroGaleria);
+      document.dispatchEvent(new CustomEvent('entregadas-tema', { detail: { tema: filtroGaleria } }));
+    }
+  });
+  // Sincronizar galería cuando se elige un tema en archivos entregados o en el panorama
+  document.addEventListener('entregadas-tema', e => {
+    const tema = e.detail?.tema || '';
+    if (tema !== filtroGaleria) { filtroGaleria = tema; pintarGaleria(); }
   });
   // los temas llegan cuando app.js termina de clasificar las investigaciones entregadas
   document.addEventListener('temas-galeria', () => { if (fotos.length) { pintarFiltros(); pintarCifras(); } });

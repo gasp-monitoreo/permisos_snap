@@ -312,7 +312,9 @@ function _panTabla(lista, total) {
 function _panSyncEntregadas() {
   if (!window.renderTablaEntregadas) return;
   const invTemas = [...PAN_FILTRO.tema].filter(v => v.startsWith('inv|')).map(v => v.slice(4));
-  window.renderTablaEntregadas(invTemas[0] || '');
+  const tema = invTemas[0] || '';
+  window.renderTablaEntregadas(tema);
+  window.setFiltroGaleria?.(tema);
 }
 
 function _panClic(e) {
