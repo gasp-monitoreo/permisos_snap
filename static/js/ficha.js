@@ -105,97 +105,85 @@ window.Ficha = (() => {
     </section>`;
   }
 
-  // ─── Línea de tiempo (SVG) ─────────────────────────────────────────────────
-  // Escala: por defecto el AÑO CALENDARIO del ingreso (ene–dic), igual para todos los permisos,
-  // así se comparan entre sí. Se puede ampliar a «ajustar al permiso» o «hasta los resultados».
-  const ESCALAS = { anio: 'Año calendario', permiso: 'Ajustar al permiso', todo: 'Hasta la entrega de resultados' };
-
+  // ─── Línea de tiempo resumida ──────────────────────────────────────────────
+  // Forma estándar de «tiempo en cada estado» (análisis de flujo / lead time): UNA barra con
+  // el tiempo total del trámite repartido entre quién lo tenía (CONAF, titular) y lo que pasó
+  // fuera de plazo, más los hitos en una fila. El detalle por etapa está en «Seguimiento CONAF».
   function plazoResultados(t) {
-    // Numeral 6: los resultados se entregan dentro de 3 años desde el término del trámite
-    const base = t.fecha_termino || t.fecha_resolucion;   // si el titular no ha cerrado, desde la resolución
+    // Numeral 6: resultados dentro de 3 años desde el término del trámite (o la resolución)
+    const base = t.fecha_termino || t.fecha_resolucion;
     const fin = base ? new Date(base) : null;
     return fin ? new Date(fin.getFullYear() + 3, fin.getMonth(), fin.getDate(), 12) : null;
   }
 
-  function lineaDeTiempo(t, et, escala = 'anio') {
-    const hoy = new Date();
+  // Tramos consecutivos: en cada momento manda CONAF si tiene una etapa abierta (rojo si ya
+  // pasó su plazo); si no, el titular; si nadie, «sin etapa abierta».
+  function tramos(et) {
+    const hoy = Date.now();
+    const iv = et.filter(s => s.ini).map(s => ({ a: +s.ini, b: +(s.fin || hoy), conaf: s.conaf, vence: s.vence ? +s.vence : null }));
+    if (!iv.length) return [];
+    const cortes = [...new Set(iv.flatMap(x => [x.a, x.b, ...(x.vence && x.vence > x.a && x.vence < x.b ? [x.vence] : [])]))].sort((p, q) => p - q);
+    const res = [];
+    for (let i = 0; i < cortes.length - 1; i++) {
+      const a = cortes[i], b = cortes[i + 1], m = (a + b) / 2;
+      const act = iv.filter(x => x.a <= m && x.b >= m);
+      const c = act.filter(x => x.conaf);
+      const tipo = c.length ? (c.some(x => x.vence && m > x.vence) ? 'atraso' : 'conaf') : act.length ? 'titular' : 'nadie';
+      const ult = res[res.length - 1];
+      if (ult && ult.tipo === tipo) ult.b = b; else res.push({ a, b, tipo });
+    }
+    return res;
+  }
+
+  function lineaDeTiempo(t, et) {
+    const tr = tramos(et);
     const ingreso = t.fecha_inicio ? new Date(t.fecha_inicio) : null;
-    if (!ingreso) return '';
-    const res = t.estado !== 'pendiente' && (t.fecha_resolucion || t.fecha_termino) ? new Date(t.fecha_resolucion || t.fecha_termino) : null;
-    const { ini: aIni, fin: aFin } = periodo(t);
-    const plazoN6 = IDS_INVESTIGACION.has(t.proceso_id) ? plazoResultados(t) : null;
-    let min, max;
-    if (escala === 'anio') {
-      min = +new Date(ingreso.getFullYear(), 0, 1); max = +new Date(ingreso.getFullYear(), 11, 31, 23, 59);
-    } else {
-      const pts = [ingreso, res, aIni, aFin, hoy, ...et.flatMap(x => [x.ini, x.fin, x.vence]), ...(escala === 'todo' ? [plazoN6] : [])].filter(Boolean).map(Number);
-      min = Math.min(...pts); max = Math.max(...pts);
-      const margen = Math.max((max - min) * 0.03, 2 * DIA);
-      min -= margen; max += margen;
-    }
-    const span = max - min;
-    const W = 1000, IZQ = 128, DER = 16, ancho = W - IZQ - DER;
-    const dentro = d => d && +d >= min && +d <= max;
-    const xn = d => IZQ + (Math.min(max, Math.max(min, +d)) - min) / span * ancho;
-    const x = d => xn(d).toFixed(1);
-    const filas = [];
-    let y = 30;
-    const carril = (titulo, contenido, alto = 20) => {
-      filas.push(`<text x="0" y="${y + alto / 2 + 4}" class="fx-tl-lbl">${escHtml(titulo)}</text>${contenido(y, alto)}`);
-      y += alto + 12;
+    if (!ingreso || !tr.length) return '';
+    const hoy = new Date();
+    const ini = Math.min(+ingreso, tr[0].a), fin = tr[tr.length - 1].b;
+    const total = Math.max(fin - ini, DIA / 2);
+    const d = ms => Math.round(ms / DIA);
+    const suma = tipo => tr.filter(x => x.tipo === tipo).reduce((s, x) => s + (x.b - x.a), 0);
+    const NOM = { conaf: 'En CONAF', atraso: 'En CONAF, fuera de plazo', titular: 'Con el titular', nadie: 'Sin etapa abierta' };
+    const QUE = {
+      conaf: 'Un funcionario de CONAF tenía la etapa: evaluar, visar o firmar.',
+      atraso: 'La etapa seguía en CONAF después de su plazo.',
+      titular: 'El titular debía actuar: enviar la solicitud, subsanar observaciones o cerrar el trámite. No es atraso de CONAF.',
+      nadie: 'Ninguna etapa estaba abierta en Cero Filas.',
     };
-    // flecha cuando una barra sigue fuera de la escala elegida
-    const sigue = (a, b, yy, h) => (+a < min ? `<text x="${IZQ - 2}" y="${yy + h / 2 + 4}" class="fx-tl-sigue" text-anchor="end">‹</text>` : '')
-      + (+b > max ? `<text x="${W - DER + 10}" y="${yy + h / 2 + 4}" class="fx-tl-sigue">›</text>` : '');
-    et.forEach(s => {
-      if (!s.ini) return;
-      carril(s.nombre.length > 18 ? s.nombre.slice(0, 17) + '…' : s.nombre, (yy, h) => {
-        const fin = s.fin || hoy;
-        if (+fin < min || +s.ini > max) return '';
-        const color = s.conaf ? '#347A17' : '#3F7CB8';
-        const tip = `${s.nombre} · a cargo de ${s.conaf ? 'CONAF' : 'el titular'} · ${f(s.e.fecha_inicio)} → ${s.e.fecha_termino ? f(s.e.fecha_termino) : 'en curso'} (${s.usados ?? 0} días)${s.vence ? ` · plazo ${f(s.e.fecha_vencimiento)}` : ''}${s.atraso ? ` · ${s.atraso} días fuera de plazo` : ''}`;
-        let svg = `<rect x="${x(s.ini)}" y="${yy}" width="${Math.max(3, xn(fin) - xn(s.ini)).toFixed(1)}" height="${h}" rx="4" fill="${color}" opacity="${s.e.estado === 'pendiente' ? .75 : 1}"><title>${escHtml(tip)}</title></rect>`;
-        if (s.atraso && s.vence && dentro(s.vence) || (s.atraso && +s.vence < min)) svg += `<rect x="${x(s.vence)}" y="${yy}" width="${Math.max(2, xn(fin) - xn(s.vence)).toFixed(1)}" height="${h}" rx="4" fill="#B9412F"><title>${escHtml(`${s.atraso} días después del plazo`)}</title></rect>`;
-        if (dentro(s.vence)) svg += `<line x1="${x(s.vence)}" x2="${x(s.vence)}" y1="${yy - 4}" y2="${yy + h + 4}" stroke="#B9412F" stroke-width="2" stroke-dasharray="3 2"><title>Plazo de la etapa: ${escHtml(f(s.e.fecha_vencimiento))}</title></line>`;
-        return svg + sigue(s.ini, fin, yy, h);
-      });
-    });
-    if (aIni) carril('En terreno', (yy, h) => (+(aFin || aIni) < min || +aIni > max) ? `<text x="${IZQ + 4}" y="${yy + h / 2 + 4}" class="fx-tl-tick">fuera de esta escala (${escHtml(aIni.toLocaleDateString('es-CL'))})</text>`
-      : `<rect x="${x(aIni)}" y="${yy}" width="${Math.max(3, xn(aFin || aIni) - xn(aIni)).toFixed(1)}" height="${h}" rx="4" fill="#D9A13B"><title>Actividades en terreno declaradas: ${escHtml(aIni.toLocaleDateString('es-CL'))} → ${escHtml((aFin || aIni).toLocaleDateString('es-CL'))}</title></rect>${sigue(aIni, aFin || aIni, yy, h)}`);
-    const hitos = [[ingreso, 'Ingreso', '#013722'], [res, t.estado === 'rechazado' ? 'Rechazo' : 'Resolución', t.estado === 'rechazado' ? '#6B4A8C' : '#347A17'],
-      [plazoN6, 'Plazo resultados', '#0155A0']]
-      .filter(h => dentro(h[0])).sort((p, q) => p[0] - q[0]);
-    // etiquetas que quedarían encimadas: la anterior se alinea a la izquierda y la siguiente a la derecha
-    const anclas = hitos.map(() => 'middle');
-    hitos.forEach((h, i) => { if (i && xn(h[0]) - xn(hitos[i - 1][0]) < 80) { anclas[i - 1] = 'end'; anclas[i] = 'start'; } });
-    const hitosSvg = hitos.map(([d, n, c], i) => `<g><circle cx="${x(d)}" cy="16" r="6" fill="${c}"/><text x="${x(d)}" y="6" dx="${anclas[i] === 'end' ? -4 : anclas[i] === 'start' ? 4 : 0}" class="fx-tl-hito" text-anchor="${anclas[i]}">${n}</text><title>${n}: ${escHtml(d.toLocaleDateString('es-CL'))}</title></g>`).join('');
-    const alto = y + 22;
-    const ticks = [];
-    const anual = span > 500 * DIA;
-    const t0 = new Date(min); t0.setDate(1); t0.setHours(0, 0, 0, 0); if (anual) t0.setMonth(0);
-    for (let d = new Date(t0); +d <= max; anual ? d.setFullYear(d.getFullYear() + 1) : d.setMonth(d.getMonth() + 1)) {
-      if (+d < min) continue;
-      const etiqueta = anual ? d.getFullYear() : d.toLocaleDateString('es-CL', { month: 'short' }).replace('.', '') + (d.getMonth() === 0 || escala !== 'anio' && +d === +t0 ? ` ${String(d.getFullYear()).slice(2)}` : '');
-      ticks.push(`<line x1="${x(d)}" x2="${x(d)}" y1="24" y2="${alto - 18}" class="fx-tl-grid"/><text x="${x(d)}" y="${alto - 4}" class="fx-tl-tick" text-anchor="${anual ? 'middle' : 'start'}" dx="${anual ? 0 : 3}">${etiqueta}</text>`);
-    }
-    return `<section class="fx-tl" aria-label="Línea de tiempo del permiso">
-      <div class="fx-tl-cab"><strong>Línea de tiempo${escala === 'anio' ? ` · ${ingreso.getFullYear()}` : ''}</strong>
-        <div class="fx-tl-escalas" role="group" aria-label="Escala">${Object.entries(ESCALAS).map(([k, v]) =>
-          `<button data-fx-escala="${k}" aria-pressed="${k === escala}">${v}</button>`).join('')}</div></div>
-      <svg viewBox="0 0 ${W} ${alto}" role="img" preserveAspectRatio="none" style="height:${alto}px">
-        ${ticks.join('')}${filas.join('')}${hitosSvg}
-        ${dentro(hoy) ? `<line x1="${x(hoy)}" x2="${x(hoy)}" y1="20" y2="${alto - 16}" class="fx-tl-hoy"/><text x="${x(hoy)}" y="${alto - 4}" class="fx-tl-hoytxt" text-anchor="middle">hoy</text>` : ''}
-      </svg>
-      <div class="fx-tl-ley"><span><i style="background:#347A17"></i>Etapa en manos de CONAF</span><span><i style="background:#3F7CB8"></i>Etapa en manos del titular</span>
-        <span><i style="background:#B9412F"></i>Tiempo fuera del plazo de la etapa</span><span><i class="fx-tl-ley-linea"></i>Plazo de la etapa</span><span><i style="background:#D9A13B"></i>Actividades en terreno</span></div>
-      <details class="fx-tl-ayuda"><summary>¿Cómo leer esta línea de tiempo?</summary>
-        <p>Cada fila es una <b>etapa del trámite en Cero Filas</b>: la barra va desde que la etapa se abrió hasta que se completó (o hasta hoy, si sigue abierta).
-          El color indica <b>quién debía actuar</b>: verde, un funcionario de CONAF (evaluación, visación, firma); azul, el titular (enviar la solicitud, subsanar, cerrar el trámite).</p>
-        <p>Las barras tienen <b>largos distintos</b> porque cada etapa dura lo que tardó su responsable: una revisión puede resolverse en un día y una subsanación del titular demorar semanas.
-          La línea roja punteada es el <b>plazo</b> que tenía esa etapa; lo que pasa de ella se pinta en rojo. «En terreno» es el período de actividades que el titular declaró en la solicitud.</p>
-        <p>La escala por defecto es el <b>año calendario</b> del ingreso, igual para todos los permisos, para compararlos entre sí. «Ajustar al permiso» amplía para ver el detalle;
-          «Hasta la entrega de resultados» muestra además el plazo del Numeral 6 (3 años desde el término del trámite). Las flechas ‹ › indican que una barra continúa fuera de la escala.</p>
-      </details>
+    const tip = html => `data-tip="${escHtml(html)}" tabindex="0"`;
+    const COL = { conaf: '#347A17', atraso: '#B9412F', titular: '#3F7CB8', nadie: '#C9C6BA' };
+    const barra = tr.map(x => {
+      const pct = (x.b - x.a) / total * 100;
+      return `<span class="fx-lt-seg" style="width:${Math.max(pct, .8)}%;background:${COL[x.tipo]}" ${tip(`<strong>${NOM[x.tipo]}: ${d(x.b - x.a)} días</strong><br>${new Date(x.a).toLocaleDateString('es-CL')} → ${new Date(x.b).toLocaleDateString('es-CL')}<br><small>${QUE[x.tipo]}</small>`)}>${pct > 9 ? `${d(x.b - x.a)} d` : ''}</span>`;
+    }).join('');
+    const res = t.estado !== 'pendiente' && (t.fecha_resolucion || t.fecha_termino) ? new Date(t.fecha_resolucion || t.fecha_termino) : null;
+    const marcaRes = res && +res >= ini && +res <= fin ? `<i class="fx-lt-res" style="left:${(+res - ini) / total * 100}%" ${tip(`<strong>Resolución de CONAF</strong><br>${res.toLocaleDateString('es-CL')}<br><small>Lo que sigue es el cierre del trámite por parte del titular.</small>`)}></i>` : '';
+    const cifras = [['conaf', suma('conaf') + suma('atraso')], ['atraso', suma('atraso')], ['titular', suma('titular')]]
+      .filter(([k, v]) => v > 0 || k !== 'atraso')
+      .map(([k, v]) => `<span ${tip(`<strong>${k === 'conaf' ? 'En CONAF' : NOM[k]}: ${d(v)} días</strong><br><small>${k === 'conaf' ? 'Suma de todo el tiempo en que la etapa abierta estaba en manos de CONAF (incluye lo fuera de plazo).' : QUE[k]}</small>`)}><i style="background:${COL[k]}"></i>${k === 'conaf' ? 'En CONAF' : NOM[k]} <b>${d(v)} d</b>${k !== 'atraso' ? ` <small>${Math.round(v / total * 100)}%</small>` : ''}</span>`).join('');
+    const { ini: aIni, fin: aFin } = periodo(t);
+    const n6 = IDS_INVESTIGACION.has(t.proceso_id) ? plazoResultados(t) : null;
+    const fecha = x => x.toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' });
+    const AYUDA = {
+      'Ingreso': 'Fecha en que el titular envió la solicitud en Cero Filas.',
+      'Resolución': 'CONAF aprobó y firmó la autorización. La resolución está en la pestaña Documentos.',
+      'Rechazo': 'CONAF rechazó la solicitud. El motivo está en Seguimiento CONAF.',
+      'En terreno': 'Período de actividades que el titular declaró en la solicitud.',
+      'Entrega de resultados': 'Numeral 6 del Reglamento: el titular debe entregar informe final, publicaciones y material dentro de 3 años desde el término del trámite. Se marca cumplido cuando hay archivos entregados.',
+    };
+    const hitos = [
+      ['Ingreso', ingreso, true],
+      [t.estado === 'rechazado' ? 'Rechazo' : 'Resolución', res, !!res, res ? `${d(+res - +ingreso)} días` : 'pendiente'],
+      ...(aIni ? [['En terreno', aIni, +aIni <= +hoy, `${fecha(aIni)} → ${fecha(aFin || aIni)}`]] : []),
+      ...(n6 && t.estado !== 'rechazado' ? [['Entrega de resultados', n6, !!(window.STATE && getArchivosTramite(t.id, t.nombre_solicitante || '')?.archivos.length), `plazo ${fecha(n6)}`]] : []),
+    ];
+    return `<section class="fx-lt" aria-label="Resumen de tiempos del permiso">
+      <div class="fx-lt-cab"><strong ${tip('<strong>Tiempo total del trámite</strong><br><small>Desde el ingreso hasta que se cerró la última etapa (o hasta hoy, si sigue abierto). Pase el cursor sobre la barra para ver cada tramo.</small>')}>${d(total)} días de trámite</strong><span>${t.estado === 'pendiente' ? 'en curso' : 'desde el ingreso hasta la última etapa'} ·
+        <button class="fx-link" data-fx-ir="seguimiento">ver detalle por etapa</button></span></div>
+      <div class="fx-lt-barra">${barra}${marcaRes}</div>
+      <div class="fx-lt-cifras">${cifras}</div>
+      <ol class="fx-lt-hitos">${hitos.map(([n, f, hecho, extra]) => `<li class="${hecho ? 'hecho' : ''}" ${tip(`<strong>${n}</strong><br><small>${AYUDA[n]}</small>`)}><b>${n}</b><span>${f ? (n === 'En terreno' || n === 'Entrega de resultados' ? '' : fecha(f)) : ''}${extra ? `${f && n !== 'En terreno' && n !== 'Entrega de resultados' ? ' · ' : ''}${escHtml(extra)}` : ''}</span></li>`).join('')}</ol>
     </section>`;
   }
 
@@ -376,15 +364,9 @@ window.Ficha = (() => {
     const body = document.getElementById('modal-tramite-body');
     const raiz = body.querySelector('.fx');
     if (!raiz) return;
+    if (!body.dataset.tips && typeof _activarInteraccion === 'function') { _activarInteraccion(body); body.dataset.tips = '1'; }
     const irA = id => raiz.querySelector(`[data-fx-tab="${id}"]`)?.click();
     raiz.addEventListener('click', e => {
-      const esc = e.target.closest('[data-fx-escala]');
-      if (esc) {
-        const abierto = raiz.querySelector('.fx-tl-ayuda')?.open;
-        document.getElementById('fx-tl-host').innerHTML = lineaDeTiempo(t, etapas(t), esc.dataset.fxEscala);
-        if (abierto) raiz.querySelector('.fx-tl-ayuda').open = true;
-        return;
-      }
       const ir = e.target.closest('[data-fx-ir]');
       if (ir) return irA(ir.dataset.fxIr);
       const terr = e.target.closest('[data-fx-territorio]');

@@ -339,8 +339,8 @@ def test_redaccion_de_textos_y_correos():
     assert t['email_solicitante'] == BLOCK and t['datos_raw']['rut'] == BLOCK and t['datos_raw']['telefono_movil'] == BLOCK
     assert 'ana@u.cl' not in t['datos_raw']['objetivos'] and '1234' not in t['datos_raw']['objetivos'] and '-71.9415' not in t['datos_raw']['objetivos']
     assert t['datos_raw']['titulo_investigacion'] == 'Aves'
-    assert t['etapas'][0]['email'].endswith('@conaf.cl') and 'func' not in t['etapas'][0]['email']   # sigue siendo CONAF
-    assert t['etapas'][0]['email'] == seudonimo_email('func@conaf.cl') and t['etapas'][1]['email'] == BLOCK
+    assert t['etapas'][0]['email'] == 'func@conaf.cl' and t['etapas'][0]['nombres'] == 'Func'   # funcionario público: visible
+    assert t['etapas'][1]['email'] == BLOCK                                                        # particular: protegido
     assert redactar('18840826-5') == BLOCK
 
 

@@ -6,8 +6,8 @@ Para usuarios sin rol Editor (permiso «Editar») ni superusuario, el servidor r
 la información sensible por «█████» ANTES de enviarla: el dato no llega al navegador
 (la página solo lo muestra difuminado y tachado). Se protege:
   - RUT/RUN, cédula, pasaporte y otros identificadores;
-  - correos (los de CONAF se seudonimizan: se conserva @conaf.cl para saber que la etapa
-    está en CONAF y una marca estable para agrupar por funcionario, sin revelar quién es);
+  - correos de particulares (los de funcionarios de CONAF, cargo público, se muestran: cada
+    perfil solo ve trámites de su región o, en el nivel central, de todo el país);
   - teléfonos y direcciones;
   - coordenadas exactas (en mapas se redondean a ~1 km).
 Documentos: los PDF con texto se entregan con los datos tachados (el texto se elimina,
@@ -98,11 +98,14 @@ def _valor(clave, v):
 
 
 def _etapa(e):
+    """Etapa: los funcionarios de CONAF (cargo público) se muestran con nombre y correo; cada
+    perfil solo recibe trámites de su ámbito (_filtrar_region), así una región no ve a los de
+    otra y el nivel central ve todo. El correo de un particular (titular) se protege."""
     if not isinstance(e, dict):
         return e
     e = dict(e)
-    if e.get('email'):
-        e['email'] = seudonimo_email(e['email'])
+    if e.get('email') and not re.search(r'@conaf\.(gob\.)?cl$', e['email'].strip(), re.I):
+        e['email'] = BLOCK
     return e
 
 

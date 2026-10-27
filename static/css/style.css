@@ -2191,3 +2191,25 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
 .fx-fotos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; }
 .fx-enlaces { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .res-tabla td:nth-child(4) { max-width: 220px; }
+
+/* Ficha: resumen de tiempos (una barra «tiempo en cada estado» + hitos) */
+.fx-lt { margin: 16px 26px 0; padding: 14px 16px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.fx-lt-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.fx-lt-cab strong { font-size: 15px; color: var(--em-950); }
+.fx-lt-cab span { font-size: 12.5px; color: var(--muted); }
+.fx-link { background: none; border: 0; padding: 0; color: var(--em-700); font: 600 12.5px 'DM Sans', sans-serif; cursor: pointer; text-decoration: underline; }
+.fx-lt-barra { position: relative; display: flex; height: 26px; border-radius: 8px; overflow: hidden; gap: 2px; background: var(--surface); }
+.fx-lt-seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11.5px; font-weight: 700; min-width: 3px; }
+.fx-lt-res { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1px; background: var(--em-950); border-radius: 2px; }
+.fx-lt-cifras { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+.fx-lt-cifras i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.fx-lt-cifras b { color: var(--text); }
+.fx-lt-hitos { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 12px; position: relative; }
+.fx-lt-hitos li { position: relative; padding: 16px 8px 0 0; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; }
+.fx-lt-hitos li::before { content: ''; position: absolute; top: 4px; left: 0; right: 0; height: 2px; background: var(--border); }
+.fx-lt-hitos li::after { content: ''; position: absolute; top: 0; left: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--em-400); }
+.fx-lt-hitos li.hecho::after { background: var(--em-600); border-color: var(--em-600); }
+.fx-lt-hitos b { color: var(--em-950); font-size: 13px; }
+.fx-lt-hitos span { color: var(--muted); }
+.fx-lt-nota { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+@media (max-width: 760px) { .fx-lt { margin-left: 16px; margin-right: 16px; } }
