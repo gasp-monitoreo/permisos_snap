@@ -210,8 +210,10 @@ def estado(index=None):
     except OSError:
         mod = None
     from datetime import datetime
+    from django.core.cache import cache
     return {**JOB, 'actualizado': datetime.fromtimestamp(mod).isoformat() if mod else None,
-            'pendientes': pendientes(index) if index is not None else None}
+            'pendientes': pendientes(index) if index is not None else None,
+            'error_drive': cache.get('fotos:error_drive')}
 
 
 def ejecutar(svc=None):
@@ -227,7 +229,11 @@ def ejecutar(svc=None):
             svc, err = get_drive_service()
             if err:
                 JOB['ultimo'] = f'sin acceso a Drive: {err}'
+                # visible para el superusuario en la Portada hasta que se renueve la autorización
+                cache.set('fotos:error_drive', 'La autorización de Google Drive venció o fue revocada.', 7 * 3600)
+                print(f'[fotos] sin acceso a Drive: {err}')
                 return False
+        cache.delete('fotos:error_drive')
         index, e = get_cached_index()
         n = extraer(svc, index or {}, log=lambda *_: None) if not e else 0
         JOB['ultimo'] = e or f'{n} fotos nuevas'

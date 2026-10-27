@@ -140,6 +140,12 @@
   // Fecha de la última búsqueda de fotos (bajo el título de la galería)
   function pintarCifras() {
     const act = jobFotos?.actualizado ? new Date(jobFotos.actualizado).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) : '';
+    const aviso = $('galeria-drive');
+    if (aviso) {
+      aviso.hidden = !(jobFotos?.error_drive && $('btn-galeria-gestionar'));   // solo el superusuario puede renovarla
+      aviso.innerHTML = `⚠ ${esc(jobFotos?.error_drive || '')} No se están agregando fotos ni entregas nuevas.
+        <a href="/auth/gmail/start" target="_blank" rel="noopener">Autorizar Google de nuevo</a>`;
+    }
     const nota = $('galeria-actualizada');
     if (nota) nota.textContent = act ? `Fotos actualizadas el ${act}${jobFotos?.pendientes ? ` · ${jobFotos.pendientes} documentos nuevos en revisión` : ''} · se buscan nuevas automáticamente cada 6 horas` : '';
   }

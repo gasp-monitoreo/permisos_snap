@@ -2306,3 +2306,6 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
 @media (max-width: 900px) { #tab-dashboard .hero { height: 112px; } #tab-dashboard .hero .hero-sub { display: none; } }
 #tab-dashboard .hero .hero-eyebrow { display: none; }
 #tab-dashboard .hero .hero-body { padding-top: 0; padding-bottom: 0; justify-content: center; }
+
+.galeria-drive { margin: 12px 20px 0; padding: 9px 12px; background: #FDF0EE; border: 1px solid #F2C7C0; border-radius: 9px; font-size: 13px; color: #7A2A1E; }
+.galeria-drive a { color: #7A2A1E; font-weight: 700; }

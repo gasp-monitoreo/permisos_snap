@@ -247,9 +247,17 @@ def gmail_auth_callback(request):
     redirect_uri = settings.GMAIL_REDIRECT_URI
     try:
         finish_gmail_oauth_flow(state, redirect_uri, request.build_absolute_uri(), code_verifier)
+        # con la autorización renovada se actualizan de inmediato el índice de Drive y las fotos
+        import threading
+        from django.core.cache import cache
+        from . import fotos
+        from .drive_utils import invalidate_cache
+        cache.delete('fotos:error_drive')
+        invalidate_cache()
+        threading.Thread(target=fotos.ejecutar, daemon=True).start()
         return HttpResponse('''<html><body style="font-family:sans-serif;padding:40px;text-align:center">
-            <h2 style="color:#1B4F1E">✅ Gmail vinculado correctamente</h2>
-            <p>Ya puedes cerrar esta pestaña.</p>
+            <h2 style="color:#1B4F1E">✅ Google vinculado correctamente</h2>
+            <p>Se están actualizando las entregas y las fotos de Drive. Ya puedes cerrar esta pestaña.</p>
             <script>setTimeout(()=>window.close(),3000)</script>
         </body></html>''')
     except Exception:
