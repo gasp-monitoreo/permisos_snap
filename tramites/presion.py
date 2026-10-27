@@ -129,28 +129,30 @@ def areas_por_region(t):
         for a in _lista(v):
             res.setdefault(region, []).append(nombre_area(a))
 
-    # Patrón 2: region_N + area_protegida_N (o sin sufijo numérico)
-    if not res:
-        pares = {}
-        for k, v in datos.items():
-            if not v:
-                continue
-            mr = _RE_CAMPO_REG.match(k)
-            ma = _RE_CAMPO_AREA.match(k)
-            if mr:
-                idx = mr.group(1) or '0'
-                pares.setdefault(idx, {})['region'] = str(v)
-            elif ma:
-                idx = ma.group(1) or '0'
-                pares.setdefault(idx, {})['area'] = str(v)
-        for par in pares.values():
-            r_raw = par.get('region', '')
-            area  = par.get('area', '')
-            if not r_raw or not area:
-                continue
-            region = _canonizar_region_valor(r_raw)
-            if region:
-                res.setdefault(region, []).append(nombre_area(area))
+    # Patrón 2: region_N + area_protegida_N (siempre, complementa al patrón 1)
+    pares = {}
+    for k, v in datos.items():
+        if not v:
+            continue
+        mr = _RE_CAMPO_REG.match(k)
+        ma = _RE_CAMPO_AREA.match(k)
+        if mr:
+            idx = mr.group(1) or '0'
+            pares.setdefault(idx, {})['region'] = str(v)
+        elif ma:
+            idx = ma.group(1) or '0'
+            pares.setdefault(idx, {})['area'] = str(v)
+    for par in pares.values():
+        r_raw = par.get('region', '')
+        area  = par.get('area', '')
+        if not r_raw or not area:
+            continue
+        region = _canonizar_region_valor(r_raw)
+        if region:
+            lista = res.setdefault(region, [])
+            a = nombre_area(area)
+            if a not in lista:
+                lista.append(a)
 
     # Fallback: trámite unirregional sin desglose en el formulario
     if not res and len(t.get('regiones_list') or []) == 1:
