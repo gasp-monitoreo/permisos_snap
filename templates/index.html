@@ -197,14 +197,8 @@
     <!-- Centro de atención: lo que requiere acción hoy (static/js/atencion.js) -->
     <section id="atencion" class="atn" aria-label="Requiere atención"></section>
 
-    <!-- Estado de las solicitudes: siempre visible, antes del mapa territorial -->
-    <div id="resumen-visual" class="panorama"></div>
-
-    <!-- Vista territorial: país → región → área protegida (static/js/territorio.js) -->
-    <div id="territorio" class="territorio"></div>
-
-    <!-- Desempeño del período: cifras y gráficos, plegado para no competir con lo urgente -->
-    <details class="desempeno" id="desempeno">
+    <!-- Desempeño del período: KPIs siempre visibles antes del estado de solicitudes -->
+    <details class="desempeno" id="desempeno" open>
       <summary>
         <span class="desempeno-tit">Desempeño del período</span>
         <span class="desempeno-res" id="desempeno-res"></span>
@@ -237,6 +231,12 @@
         </div>
       </div>
     </details>
+
+    <!-- Estado de las solicitudes -->
+    <div id="resumen-visual" class="panorama"></div>
+
+    <!-- Vista territorial: país → región → área protegida (static/js/territorio.js) -->
+    <div id="territorio" class="territorio"></div>
 
   </section>
 
