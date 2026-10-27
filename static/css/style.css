@@ -2350,3 +2350,23 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
 
 .galeria-drive { margin: 12px 20px 0; padding: 9px 12px; background: #FDF0EE; border: 1px solid #F2C7C0; border-radius: 9px; font-size: 13px; color: #7A2A1E; }
 .galeria-drive a { color: #7A2A1E; font-weight: 700; }
+
+/* ── Panel de accesos de investigadores (superusuario) ── */
+.acc-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.acc-pill--ok  { background: #D1FAE5; color: #065F46; }
+.acc-pill--ven { background: #FEF3C7; color: #92400E; }
+.acc-pill--sin { background: #FEE2E2; color: #991B1B; }
+.acc-pill--rev { background: var(--surface2); color: var(--muted); }
+.acc-tipo { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
+.acc-tipo--inv  { background: var(--em-100); color: var(--em-900); }
+.acc-tipo--film { background: #DBEAFE; color: #1E3A8A; }
+.acc-cnt { text-align: center; font-weight: 700; font-size: 13px; }
+.acc-cnt--ok { color: var(--em-700); }
+.acc-cnt--0  { color: var(--muted); font-weight: 400; }
+.acc-fila--alerta td { background: #FFF7ED; }
+.acc-fila--alerta:hover td { background: #FEF3C7; }
+.acc-sol { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-nunca { color: var(--muted); font-size: 12px; }
+.acc-revocar { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; border-radius: 7px; cursor: pointer; font-size: 12px; padding: 3px 10px; font-weight: 600; }
+.acc-revocar:hover { background: #FECACA; }
+.acc-revocar:disabled { opacity: .5; cursor: wait; }

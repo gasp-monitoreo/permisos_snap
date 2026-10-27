@@ -84,6 +84,10 @@
       <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/></svg>
       <span>Historial</span>
     </button>
+    <button class="tab-btn" data-tab="accesos" data-title="Accesos de investigadores">
+      <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <span>Accesos</span>
+    </button>
     {% endif %}
   </nav>
 
@@ -460,6 +464,59 @@
     </div>
     <p class="usr-nota">El historial no se puede borrar. Las acciones marcadas como «reversibles» se pueden deshacer una sola vez.</p>
   </section>
+
+  <!-- ── TAB: ACCESOS (solo superusuario) ── -->
+  <section id="tab-accesos" class="tab-content">
+    <div class="hero hero--short" data-hero="4">
+      <div class="hero-body">
+        <span class="hero-eyebrow">Administración</span>
+        <h2 class="hero-title">Accesos de investigadores</h2>
+        <p class="hero-sub">Accesos temporales para que investigadores y productoras registren sus sitios de trabajo y entreguen resultados (Numeral 6 del Reglamento).</p>
+      </div>
+      <div class="hero-credit"></div>
+    </div>
+
+    <div class="usr-barra">
+      <select id="acc-filtro-estado">
+        <option value="">Todos los estados</option>
+        <option value="vigente">Vigentes</option>
+        <option value="vencido">Vencidos sin entrega</option>
+        <option value="revocado">Revocados</option>
+      </select>
+      <select id="acc-filtro-tipo">
+        <option value="">Investigación y filmación</option>
+        <option value="inv">Solo investigación</option>
+        <option value="film">Solo filmación</option>
+      </select>
+      <span class="usr-espacio"></span>
+      <span id="acc-conteo" class="hist-pag-info"></span>
+    </div>
+    <div class="section-card">
+      <div class="table-wrapper">
+        <table class="hist-table">
+          <thead>
+            <tr>
+              <th>Trámite</th>
+              <th>Solicitante</th>
+              <th>Tipo</th>
+              <th>Generado por</th>
+              <th>Generado el</th>
+              <th>Vence</th>
+              <th>Estado</th>
+              <th title="Puntos registrados en el mapa">📍 Geo</th>
+              <th title="Archivos entregados (Numeral 6)">📎 N6</th>
+              <th>Último ingreso</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="acc-tabla">
+            <tr><td colspan="11" class="empty-msg">Haga clic en «Accesos» para cargar.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="usr-nota">«Vencido sin entrega»: el plazo terminó y el investigador no registró coordenadas ni entregó archivos del Numeral 6. Puede revocar esos accesos para limpiar la lista.</p>
+  </section>
   {% endif %}
 
 </main>
@@ -672,6 +729,7 @@
 <script src="/static/js/privacidad.js"></script>
 {% if perfil.superusuario %}<script src="/static/js/usuarios.js"></script>{% endif %}
 {% if perfil.superusuario %}<script src="/static/js/historial.js"></script>{% endif %}
+{% if perfil.superusuario %}<script src="/static/js/accesos.js"></script>{% endif %}
 <script src="/static/js/recorrido.js"></script>
 </body>
 </html>

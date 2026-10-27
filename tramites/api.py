@@ -1163,11 +1163,19 @@ def accesos_generar(request):
 @api.get('/accesos')
 @requiere(superusuario=True)
 def accesos_listar(request):
-    from .models import AccesoInvestigador, RegistroGeografico
+    from .models import AccesoInvestigador, EntregaN6, RegistroGeografico
     from django.db.models import Count
-    n = dict(RegistroGeografico.objects.values_list('tramite_id').annotate(c=Count('id')))
-    accs = AccesoInvestigador.objects.select_related('user').order_by('-creado_en')
-    return {'ok': True, 'data': [{**a.como_dict(), 'registros': n.get(a.tramite_id, 0)} for a in accs]}
+    n_geo = dict(RegistroGeografico.objects.values_list('tramite_id').annotate(c=Count('id')))
+    n_n6  = dict(EntregaN6.objects.values_list('tramite_id').annotate(c=Count('id')))
+    accs  = AccesoInvestigador.objects.select_related('user', 'creado_por').order_by('-creado_en')
+    def _enr(a):
+        d = a.como_dict()
+        d['registros'] = n_geo.get(a.tramite_id, 0)
+        d['n6']        = n_n6.get(a.tramite_id, 0)
+        cp = a.creado_por
+        d['creado_por_nombre'] = (cp.get_full_name() or cp.username) if cp else ''
+        return d
+    return {'ok': True, 'data': [_enr(a) for a in accs]}
 
 
 @api.post('/accesos/{acceso_id}/revocar')
