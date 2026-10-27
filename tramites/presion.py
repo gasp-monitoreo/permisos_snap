@@ -96,10 +96,29 @@ def _lista(valor):
     return [v] if v else []
 
 
+_RE_CAMPO_REG  = re.compile(r'^(?:region|regi[oó]n)(?:_(\d+))?$', re.IGNORECASE)
+_RE_CAMPO_AREA = re.compile(r'^(?:[aá]rea_protegida|unidad|parque|reserva|monumento|santuario)(?:_(\d+))?$', re.IGNORECASE)
+
+
+def _canonizar_region_valor(valor):
+    """Convierte un valor de campo 'region' del formulario al nombre canónico."""
+    from .core import parse_regiones
+    lista = parse_regiones(valor)
+    return lista[0] if lista else None
+
+
 def areas_por_region(t):
-    """{región: [áreas]} a partir de los campos region_de_<x> del formulario."""
+    """{región: [áreas]} a partir de los campos del formulario.
+
+    Soporta dos patrones:
+      1. region_de_<x>: clave = nombre de región, valor = área(s)  [filmación]
+      2. region_N + area_protegida_N: pares por índice N            [investigación]
+    """
     res = {}
-    for k, v in (t.get('datos_raw') or {}).items():
+    datos = t.get('datos_raw') or {}
+
+    # Patrón 1: region_de_<x> → área(s)
+    for k, v in datos.items():
         m = re.match(r'^region_de(?:l)?_(.+)$', k)
         if not m or not v:
             continue
@@ -109,6 +128,31 @@ def areas_por_region(t):
             continue
         for a in _lista(v):
             res.setdefault(region, []).append(nombre_area(a))
+
+    # Patrón 2: region_N + area_protegida_N (o sin sufijo numérico)
+    if not res:
+        pares = {}
+        for k, v in datos.items():
+            if not v:
+                continue
+            mr = _RE_CAMPO_REG.match(k)
+            ma = _RE_CAMPO_AREA.match(k)
+            if mr:
+                idx = mr.group(1) or '0'
+                pares.setdefault(idx, {})['region'] = str(v)
+            elif ma:
+                idx = ma.group(1) or '0'
+                pares.setdefault(idx, {})['area'] = str(v)
+        for par in pares.values():
+            r_raw = par.get('region', '')
+            area  = par.get('area', '')
+            if not r_raw or not area:
+                continue
+            region = _canonizar_region_valor(r_raw)
+            if region:
+                res.setdefault(region, []).append(nombre_area(area))
+
+    # Fallback: trámite unirregional sin desglose en el formulario
     if not res and len(t.get('regiones_list') or []) == 1:
         res[t['regiones_list'][0]] = [nombre_area(a) for a in t.get('areas_protegidas') or []]
     return res
