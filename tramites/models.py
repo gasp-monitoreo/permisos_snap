@@ -257,3 +257,22 @@ class AdjuntoAjuste(models.Model):
     tipo    = models.CharField(max_length=100)
     tamano  = models.IntegerField()
     datos   = models.BinaryField()
+
+
+class DriveFolderMap(models.Model):
+    """Mapeo manual: nombre de carpeta en Drive → tramite_id(s) para carpetas flat sin subcarpetas.
+    Permite asociar archivos entregados con sus permisos de investigación correspondientes."""
+    folder_name = models.CharField(max_length=255, unique=True, db_index=True,
+                                   help_text='Nombre exacto de la carpeta en Drive (ej: Ocampo_Karina)')
+    tramite_ids = models.JSONField(default=list,
+                                   help_text='Lista de IDs de trámite CeroFilas (ej: [31144311])')
+    notas       = models.TextField(blank=True,
+                                   help_text='Email del investigador, título del proyecto, etc.')
+
+    class Meta:
+        ordering            = ['folder_name']
+        verbose_name        = 'Mapeo carpeta Drive'
+        verbose_name_plural = 'Mapeos carpetas Drive'
+
+    def __str__(self):
+        return f'{self.folder_name} → {self.tramite_ids}'

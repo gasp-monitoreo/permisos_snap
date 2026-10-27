@@ -97,7 +97,14 @@ def build_index(service, folder_id):
           <tramite_id>/           ← subcarpeta con nombre numérico
             archivo.pdf
           otro.pdf                ← o archivos directos (estructura flat)
+
+    Para carpetas flat, se consulta DriveFolderMap para obtener el tramite_id
+    asignado manualmente.
     """
+    from .models import DriveFolderMap
+    folder_map = {m.folder_name: m.tramite_ids
+                  for m in DriveFolderMap.objects.all()}
+
     result = {}
     for inv in _list_items(service, folder_id):
         FOLDER = 'application/vnd.google-apps.folder'
@@ -121,7 +128,12 @@ def build_index(service, folder_id):
             archivos = [_file_entry(f) for f in children if f['mimeType'] != FOLDER and not es_basura(f['name'])]
             archivos = [a for a in archivos if a]
             if archivos:
-                result[inv['name']] = {'tipo': 'flat', 'archivos': archivos}
+                mapped_ids = folder_map.get(inv['name'], [])
+                if mapped_ids:
+                    ids_data = {str(tid): archivos for tid in mapped_ids}
+                    result[inv['name']] = {'tipo': 'mapped', 'ids': ids_data}
+                else:
+                    result[inv['name']] = {'tipo': 'flat', 'archivos': archivos}
 
     return result
 

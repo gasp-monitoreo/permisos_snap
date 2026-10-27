@@ -165,12 +165,13 @@ def _entregas(t):
         return None
     tid, nombre = str(t.get('id')), set(_norm(t.get('nombre_solicitante')))
     for carpeta, d in indice.items():
-        if isinstance(d, dict) and d.get('tipo') == 'nested' and tid in (d.get('ids') or {}):
+        tipo = isinstance(d, dict) and d.get('tipo')
+        if tipo in ('nested', 'mapped') and tid in (d.get('ids') or {}):
             return d['ids'][tid]
     for carpeta, d in indice.items():
         toks = _norm(carpeta.replace('_', ' '))
         if toks and all(x in nombre for x in toks):
-            if isinstance(d, dict) and d.get('tipo') == 'nested':
+            if isinstance(d, dict) and d.get('tipo') in ('nested', 'mapped'):
                 return next(iter((d.get('ids') or {}).values()), [])
             return (d or {}).get('archivos', []) if isinstance(d, dict) else []
     return []

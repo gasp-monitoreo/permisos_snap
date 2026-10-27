@@ -97,12 +97,13 @@ function detectarDuplicadosRegionales(tramites) {
 
 function getArchivosTramite(tramiteId, nombre) {
   const idStr = String(tramiteId || '');
-  // 1) Coincidencia exacta por ID en estructura anidada
+  const hasIds = d => d.ids && typeof d.ids === 'object';
+  // 1) Coincidencia exacta por ID en estructura anidada o mapeada
   if (idStr) {
     for (const [folder, data] of Object.entries(STATE.investigaciones)) {
-      if (data.tipo === 'nested' && data.ids && data.ids[idStr]) {
+      if ((data.tipo === 'nested' || data.tipo === 'mapped') && hasIds(data) && data.ids[idStr]) {
         return {
-          folder, tipo: 'nested', id: idStr,
+          folder, tipo: data.tipo, id: idStr,
           archivos: data.ids[idStr],
           url: `/investigaciones/${encodeURIComponent(folder)}/${idStr}/`,
         };
@@ -114,14 +115,14 @@ function getArchivosTramite(tramiteId, nombre) {
   for (const [folder, data] of Object.entries(STATE.investigaciones)) {
     const tokens = _normInv(folder.replace(/_/g,' ')).split(' ').filter(Boolean);
     if (tokens.length >= 1 && tokens.every(tok => nNorm.includes(tok))) {
-      // En nested: si el ID no matcheó, devolver todos los archivos del primer ID
-      if (data.tipo === 'nested' && data.ids) {
+      // En nested/mapped: si el ID no matcheó, devolver todos los archivos
+      if ((data.tipo === 'nested' || data.tipo === 'mapped') && hasIds(data)) {
         const firstId = Object.keys(data.ids)[0];
         const archivos = firstId
           ? Object.values(data.ids).flat()
           : [];
         return {
-          folder, tipo: 'nested', id: firstId || null,
+          folder, tipo: data.tipo, id: firstId || null,
           archivos,
           url: firstId
             ? `/investigaciones/${encodeURIComponent(folder)}/${firstId}/`
