@@ -32,7 +32,8 @@ td, th { padding: 3pt 5pt; vertical-align: top; text-align: left; }
 th { background-color: #013722; color: #FFFFFF; font-size: 8pt; }
 .kv { border-bottom: 1px solid #ECE9E1; padding: 3pt 0 4pt 0; }
 .kv p.k { color: #5F6B62; font-size: 7.5pt; font-weight: bold; text-transform: uppercase; margin: 0; }
-.kv p.v { margin: 1pt 0 0 0; }
+.kv p.v { margin: 1pt 0 0 0; text-align: justify; }
+.caja p, td { text-align: justify; }
 .grid td { border: 1px solid #E4E1D5; }
 .caja { background-color: #FAF9F4; border: 1px solid #E4E1D5; padding: 6pt 8pt; }
 .barra { font-size: 11pt; line-height: 1; letter-spacing: -1pt; margin: 2pt 0; }
