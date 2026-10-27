@@ -597,11 +597,16 @@ function paramsRango() {
 function filtrarRango(lista) {
   const desde = parseInt($('rango-desde').value);
   const hasta  = parseInt($('rango-hasta').value);
-  return lista.filter(t => {
-    if (!t.fecha_inicio) return false;
-    const y = new Date(t.fecha_inicio).getFullYear();
-    return y >= desde && y <= hasta;
-  });
+  return lista
+    .filter(t => {
+      if (!t.fecha_inicio) return false;
+      const y = new Date(t.fecha_inicio).getFullYear();
+      return y >= desde && y <= hasta;
+    })
+    .map(t => {
+      const areasJS = computarAreasRegion(t);
+      return Object.keys(areasJS).length ? { ...t, areas_region: areasJS } : t;
+    });
 }
 
 // ─── Inicialización ───────────────────────────────────────────────────────────
@@ -783,16 +788,70 @@ const GRUPO_DE_TIPO = { inv: 'investigacion', film: 'filmacion' };
 // Un trámite multirregional cuenta en cada región; el área se compara sin tildes y de forma
 // tolerante (el formulario y los límites oficiales escriben los nombres distinto).
 const areaCoincide = (x, a) => { const n = _normInv(x), m = _normInv(a); return !!n && !!m && (n.includes(m) || m.includes(n)); };
-// Áreas del permiso en una región: las que el formulario declara para esa región (un permiso
-// multirregional no debe aportar áreas de otras regiones). Sin región: todas.
+
+// Construye { región: [áreas] } desde datos_raw usando la misma lógica que el tab Territorio.
+function computarAreasRegion(t) {
+  const datos = t.datos_raw || {};
+  const regAreaMap = {};
+  const ya = new Set();
+  // Pasada 1: region[_N] + area_protegida[_N] — pares exactos
+  for (const [k, v] of Object.entries(datos)) {
+    if (!v) continue;
+    const mr = k.match(/^(region|regi[oó]n)(?:_(\d+))?$/i);
+    const ma = k.match(/^(area_protegida|[aá]rea_protegida|unidad|parque|reserva|monumento|santuario)(?:_(\d+))?$/i);
+    if (mr) {
+      const idx = mr[2] || '0';
+      (regAreaMap[idx] = regAreaMap[idx] || {}).region = v;
+      ya.add(k);
+    } else if (ma) {
+      const idx = ma[2] || '0';
+      (regAreaMap[idx] = regAreaMap[idx] || {}).area = v;
+      ya.add(k);
+    }
+  }
+  // Pasada 2: region_de_*, y otros campos con región o área
+  for (const [k, v] of Object.entries(datos)) {
+    if (ya.has(k) || !v) continue;
+    if (!RE_REGION_AREA.test(k)) continue;
+    const rawV = typeof v === 'object'
+      ? (Array.isArray(v) ? JSON.stringify(v) : (v.nombre || v.name || JSON.stringify(v)))
+      : String(v);
+    const idx = (k.match(/(\d+)$/) || ['', k])[1];
+    regAreaMap[idx] = regAreaMap[idx] || {};
+    if (RE_REGION.test(k)) {
+      const rmk = k.match(/^region_(?:de(?:l)?_)?(.+)$/i);
+      const rFromKey = rmk ? humanizarRegion(rmk[1]) : null;
+      if (rFromKey) {
+        regAreaMap[idx].region = rFromKey;
+        if (!_IGNORAR_VAL.test(rawV.trim()) && !rawV.startsWith('{')) regAreaMap[idx].area = rawV;
+      } else if (!rmk || !k.match(/^region_(?:de(?:l)?_)/i)) {
+        regAreaMap[idx].region = rawV;
+      }
+    } else {
+      regAreaMap[idx].area = rawV;
+    }
+  }
+  // Construir mapa { región: [áreas] }
+  const res = {};
+  for (const { region, area } of Object.values(regAreaMap)) {
+    if (!region || !area) continue;
+    const r = humanizarRegion(region);
+    if (!r) continue;
+    for (const a of humanizarArea(area)) {
+      if (!(r in res)) res[r] = [];
+      if (!res[r].includes(a)) res[r].push(a);
+    }
+  }
+  return res;
+}
+
+// Áreas del permiso en una región: las que el formulario declara para esa región.
+// Sin región: todas.
 function areasEnRegion(t, region) {
   if (!region) return t.areas_protegidas || [];
-  // Con desglose estructurado por región: usar esas áreas exactas
   const porRegion = t.areas_region?.[region];
   if (porRegion?.length) return porRegion;
-  // Permiso unirregional: todas sus AP pertenecen a esta región
   if ((t.regiones_list || []).length <= 1) return t.areas_protegidas || [];
-  // Permiso multirregional sin desglose para esta región: no contaminar con AP de otras regiones
   return [];
 }
 
