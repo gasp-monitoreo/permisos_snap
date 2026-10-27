@@ -103,7 +103,7 @@
   // ── Galería «Desde el terreno»: orden aleatorio, rotación continua y filtro por tema ──
   const N_GALERIA = 12, ROTAR_MS = 3500;
   const quieto = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let filtroGaleria = '', tipoGaleria = '', visibles = [], rotador = null, pausada = false;
+  let filtroGaleria = '', tipoGaleria = '', visibles = [], rotador = null, pausada = false, jobFotos = null;
   const temaDeFoto = f => window.TEMA_POR_CARPETA?.get(_normInv(f.investigador)) || null;
   const tipoDeFoto = f => window.TIPO_POR_CARPETA?.get(_normInv(f.investigador)) || 'inv';
   const TIPOS_GALERIA = [['', 'Todas'], ['inv', 'Investigación'], ['film', 'Filmación y fotografía']];
@@ -137,12 +137,23 @@
           ${esc(t || 'Todos los temas')} <span class="galeria-n">${n}</span></button>`).join('')}</div>`;
   }
 
+  // Cifras del encabezado de la Portada y fecha de la última búsqueda de fotos
+  function pintarCifras() {
+    const invs = new Set(fotos.map(f => f.investigador));
+    const entregas = typeof STATE !== 'undefined' ? Object.keys(STATE.investigaciones || {}).length : 0;
+    const act = jobFotos?.actualizado ? new Date(jobFotos.actualizado).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) : '';
+    $('hero-chips-portada').innerHTML = fotos.length
+      ? `<span class="hero-chip" title="Fotos visibles en la galería">${fotos.length} fotografías</span>
+         <span class="hero-chip" title="Investigaciones con al menos una foto visible">de ${invs.size} investigaciones</span>
+         ${entregas ? `<span class="hero-chip" title="Investigaciones con informes entregados en Drive">${entregas} con entregas</span>` : ''}`
+      : '';
+    const nota = $('galeria-actualizada');
+    if (nota) nota.textContent = act ? `Fotos actualizadas el ${act}${jobFotos?.pendientes ? ` · ${jobFotos.pendientes} documentos nuevos en revisión` : ''} · se buscan nuevas automáticamente cada 6 horas` : '';
+  }
+
   function pintarGaleria() {
     const el = $('galeria-fotos');
-    const invs = new Set(fotos.map(f => f.investigador));
-    $('hero-chips-portada').innerHTML = fotos.length
-      ? `<span class="hero-chip">${fotos.length} fotografías</span><span class="hero-chip">${invs.size} investigaciones</span>`
-      : '';
+    pintarCifras();
     if (!fotos.length) {
       el.innerHTML = $('btn-galeria-gestionar')
         ? '<div class="empty-msg">Aún no hay fotos. Usa «Gestionar fotos» → «Buscar fotos nuevas en Drive».</div>'
@@ -200,12 +211,14 @@
     pintarGaleria();
   });
   // los temas llegan cuando app.js termina de clasificar las investigaciones entregadas
-  document.addEventListener('temas-galeria', () => { if (fotos.length) pintarFiltros(); });
+  document.addEventListener('temas-galeria', () => { if (fotos.length) { pintarFiltros(); pintarCifras(); } });
 
   async function cargarFotos() {
     try {
       const r = await fetch('/api/fotos');
-      fotos = (await r.json()).data || [];
+      const j = await r.json();
+      fotos = j.data || [];
+      jobFotos = j.job || null;
     } catch (e) { fotos = []; }
     pintarHeroes();
     pintarGaleria();

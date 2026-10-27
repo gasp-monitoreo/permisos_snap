@@ -190,3 +190,69 @@ def extraer(service, index, reprocesar=False, log=print):
             save_manifest(m)
         save_manifest(m)
         return nuevas
+
+
+# ─── Búsqueda de fotos nuevas: a pedido (botón) y automática cada 6 horas ─────
+CADA_SEG = 6 * 3600
+JOB = {'corriendo': False, 'ultimo': None}
+
+
+def pendientes(index):
+    """Documentos PDF/Word del índice de Drive que aún no se revisan."""
+    m = load_manifest()
+    return sum(1 for _, _, a in _documentos(index or {})
+               if os.path.splitext(a['nombre'])[1].lower() in ('.pdf', '.docx') and a['drive_id'] not in m['procesados'])
+
+
+def estado(index=None):
+    try:
+        mod = os.path.getmtime(_manifest_path())
+    except OSError:
+        mod = None
+    from datetime import datetime
+    return {**JOB, 'actualizado': datetime.fromtimestamp(mod).isoformat() if mod else None,
+            'pendientes': pendientes(index) if index is not None else None}
+
+
+def ejecutar(svc=None):
+    """Revisa los documentos nuevos de Drive y agrega sus fotos. Un solo proceso a la vez
+    (candado en la caché compartida entre los workers de gunicorn)."""
+    from django.core.cache import cache
+    from .drive_utils import get_cached_index, get_drive_service
+    if JOB['corriendo'] or not cache.add('fotos:extraccion', 1, 3600):
+        return False
+    JOB.update({'corriendo': True, 'ultimo': None})
+    try:
+        if svc is None:
+            svc, err = get_drive_service()
+            if err:
+                JOB['ultimo'] = f'sin acceso a Drive: {err}'
+                return False
+        index, e = get_cached_index()
+        n = extraer(svc, index or {}, log=lambda *_: None) if not e else 0
+        JOB['ultimo'] = e or f'{n} fotos nuevas'
+        return True
+    except Exception as exc:
+        JOB['ultimo'] = f'error: {exc}'
+        return False
+    finally:
+        JOB['corriendo'] = False
+        cache.delete('fotos:extraccion')
+
+
+def programar():
+    """Cada 6 horas busca fotos en los documentos entregados que aún no se revisan."""
+    import time
+
+    def bucle():
+        time.sleep(180)                      # deja terminar el arranque
+        while True:
+            try:
+                from .drive_utils import get_cached_index
+                index, e = get_cached_index()
+                if not e and pendientes(index):
+                    ejecutar()
+            except Exception as exc:
+                print(f'[fotos] búsqueda automática: {exc}')
+            time.sleep(CADA_SEG)
+    threading.Thread(target=bucle, daemon=True).start()

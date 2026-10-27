@@ -33,3 +33,8 @@ class TramitesConfig(AppConfig):
                 print(f'[startup] Error precargando índice Drive: {exc}')
 
         threading.Thread(target=_init, daemon=True).start()
+        try:
+            from .fotos import programar
+            programar()           # fotos de los informes entregados: búsqueda automática cada 6 h
+        except Exception as exc:
+            print(f'[startup] Error programando la búsqueda de fotos: {exc}')

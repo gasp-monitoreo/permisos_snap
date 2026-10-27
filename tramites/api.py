@@ -522,7 +522,6 @@ def presion_areas(request, region: str, tipo: Optional[str] = None):
 
 # ── Fotos de portada ──────────────────────────────────────────────────────────
 
-_fotos_job = {'corriendo': False, 'ultimo': None}
 
 
 def _es_superusuario(request):
@@ -538,8 +537,14 @@ def fotos_lista(request, todas: bool = False):
     fotos = load_manifest()['fotos']
     if not (todas and _es_superusuario(request)):   # las ocultas solo las ve el superusuario
         fotos = [f for f in fotos if f.get('activa', True)]
+    from . import fotos as fotos_mod
+    from .drive_utils import get_cached_index
+    try:
+        index, _ = get_cached_index()
+    except Exception:
+        index = None
     return {'ok': True, 'data': [{**f, 'url': f'/fotos/{f["archivo"]}'} for f in fotos],
-            'job': _fotos_job}
+            'job': fotos_mod.estado(index)}
 
 
 @api.post('/fotos/{archivo}/activa')
@@ -558,31 +563,18 @@ def fotos_toggle(request, archivo: str, activa: bool):
 
 @api.post('/fotos/extraer')
 def fotos_extraer(request):
-    """Lanza en background la extracción de fotos desde los documentos Drive."""
+    """Lanza en segundo plano la búsqueda de fotos en los documentos nuevos de Drive."""
     if not _es_superusuario(request):
         return api.create_response(request, _SOLO_SUPERUSUARIO, status=403)
     import threading
-    from .drive_utils import get_cached_index, get_drive_service
+    from .drive_utils import get_drive_service
     from . import fotos
-
-    if _fotos_job['corriendo']:
-        return {'ok': True, 'job': _fotos_job}
+    if fotos.JOB['corriendo']:
+        return {'ok': True, 'job': fotos.estado()}
     svc, err = get_drive_service()
     if err:
         return {'ok': False, 'error': err}
-
-    def run():
-        _fotos_job.update({'corriendo': True, 'ultimo': None})
-        try:
-            index, e = get_cached_index()
-            n = fotos.extraer(svc, index or {}, log=lambda *_: None) if not e else 0
-            _fotos_job['ultimo'] = e or f'{n} fotos nuevas'
-        except Exception as exc:
-            _fotos_job['ultimo'] = f'error: {exc}'
-        finally:
-            _fotos_job['corriendo'] = False
-
-    threading.Thread(target=run, daemon=True).start()
+    threading.Thread(target=fotos.ejecutar, args=(svc,), daemon=True).start()
     return {'ok': True, 'job': {'corriendo': True}}
 
 
