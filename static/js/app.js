@@ -2390,9 +2390,6 @@ function renderModalBody(t) {
       </tr></thead>
       <tbody>${fileRows}</tbody>
     </table>
-    <div style="margin-top:10px">
-      <a href="${safeUrl(inv.url)}" target="_blank" class="btn-export" style="font-size:12px;padding:6px 14px">📂 Abrir carpeta</a>
-    </div>
   </div>`;
     })()}
 

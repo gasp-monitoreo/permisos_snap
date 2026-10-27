@@ -265,8 +265,7 @@ window.Ficha = (() => {
     return `${adj.length ? `<div class="fx-docs-cab"><h4>Documentos del trámite <small>${adj.length}</small></h4>
         <a class="fx-btn" href="/api/tramites/${t.id}/adjuntos.zip">Descargar todos (ZIP)</a></div><div class="fx-docs">${tarjetas}</div>`
         : '<p class="fx-nota">El trámite no tiene documentos adjuntos.</p>'}
-      ${piezas.entregados || ''}
-      <p class="fx-nota">Los documentos se abren desde la plataforma, sin cuenta en Cero Filas. Cada apertura queda registrada.</p>`;
+      ${piezas.entregados || ''}`;
   }
 
   function relacionados(t) {
