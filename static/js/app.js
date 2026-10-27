@@ -1316,6 +1316,17 @@ function archivosDeFolder(data) {
 }
 
 function getTramitePorCarpeta(folderName) {
+  // Para carpetas con IDs mapeados explícitamente, buscar tramite por ID directo
+  const data = STATE.investigaciones[folderName];
+  if (data?.tipo === 'mapped' && data.ids) {
+    for (const idStr of Object.keys(data.ids)) {
+      const id = Number(idStr);
+      const t = (STATE.tramites || []).find(t => t.id === id)
+             || (STATE.complianceData || []).find(t => t.id === id);
+      if (t) return t;
+    }
+  }
+  // Fallback: token matching por nombre de carpeta
   const tokens = _normInv(folderName.replace(/_/g, ' ')).split(' ').filter(Boolean);
   if (!tokens.length) return null;
   const match = lista => lista.find(t => {
