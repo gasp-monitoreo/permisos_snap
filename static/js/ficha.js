@@ -262,10 +262,7 @@ window.Ficha = (() => {
       return `<a class="fx-doc${RESOLUCION.test(k) ? ' fx-doc--res' : ''}" href="${url(k)}" target="_blank" rel="noopener">
         <span class="fx-doc-ico">${icono}</span><span class="fx-doc-nom">${escHtml(RESOLUCION.test(k) ? 'Resolución / autorización de CONAF' : nombre)}</span><span class="badge-ext">${escHtml(ext)}</span></a>`;
     }).join('');
-    return `${res && adjuntoExtension(res[1]) === 'PDF' ? `<div class="fx-visor"><div class="fx-visor-cab"><strong>Resolución / autorización</strong>
-        <a href="${url(res[0])}" target="_blank" rel="noopener">Abrir en otra pestaña ↗</a></div>
-        <iframe src="${url(res[0])}" title="Resolución del trámite ${t.id}" aria-label="Resolución del trámite ${t.id}"></iframe></div>` : ''}
-      ${adj.length ? `<div class="fx-docs-cab"><h4>Documentos del trámite <small>${adj.length}</small></h4>
+    return `${adj.length ? `<div class="fx-docs-cab"><h4>Documentos del trámite <small>${adj.length}</small></h4>
         <a class="fx-btn" href="/api/tramites/${t.id}/adjuntos.zip">Descargar todos (ZIP)</a></div><div class="fx-docs">${tarjetas}</div>`
         : '<p class="fx-nota">El trámite no tiene documentos adjuntos.</p>'}
       ${piezas.entregados || ''}
