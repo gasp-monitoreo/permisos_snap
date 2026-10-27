@@ -782,11 +782,19 @@ const GRUPO_DE_TIPO = { inv: 'investigacion', film: 'filmacion' };
 // Un trámite multirregional cuenta en cada región; el área se compara sin tildes y de forma
 // tolerante (el formulario y los límites oficiales escriben los nombres distinto).
 const areaCoincide = (x, a) => { const n = _normInv(x), m = _normInv(a); return !!n && !!m && (n.includes(m) || m.includes(n)); };
+// Áreas del permiso en una región: las que el formulario declara para esa región (un permiso
+// multirregional no debe aportar áreas de otras regiones). Sin región: todas.
+function areasEnRegion(t, region) {
+  if (!region) return t.areas_protegidas || [];
+  const porRegion = t.areas_region?.[region];
+  if (porRegion?.length) return porRegion;
+  return (t.regiones_list || []).length === 1 ? (t.areas_protegidas || []) : [];
+}
 
 function filtrarPorAmbito(lista, { sinRegion = false, sinArea = false } = {}) {
   let r = lista;
   if (STATE.region && !sinRegion) r = r.filter(t => (t.regiones_list || []).includes(STATE.region));
-  if (STATE.area && !sinArea && !sinRegion) r = r.filter(t => (t.areas_protegidas || []).some(x => areaCoincide(x, STATE.area)));
+  if (STATE.area && !sinArea && !sinRegion) r = r.filter(t => areasEnRegion(t, STATE.region).some(x => areaCoincide(x, STATE.area)));
   if (STATE.mio) {
     const yo = (window.PERFIL?.email || '').toLowerCase();
     r = r.filter(t => yo && (t.etapa_actual?.email || '').toLowerCase() === yo);
@@ -828,7 +836,7 @@ function renderAmbito() {
   const nReg = nombre => base.filter(t => (t.regiones_list || []).includes(nombre)).length;
   const enRegion = STATE.region ? base.filter(t => (t.regiones_list || []).includes(STATE.region)) : [];
   const areas = new Map();
-  enRegion.forEach(t => (t.areas_protegidas || []).forEach(a => areas.set(a, (areas.get(a) || 0) + 1)));
+  enRegion.forEach(t => areasEnRegion(t, STATE.region).forEach(a => areas.set(a, (areas.get(a) || 0) + 1)));
   const listaAreas = [...areas.entries()].sort((a, b) => b[1] - a[1]);
   if (STATE.area && !listaAreas.some(([a]) => areaCoincide(a, STATE.area))) listaAreas.unshift([STATE.area, 0]);
   const sel = a => STATE.area && areaCoincide(a, STATE.area) && (a === STATE.area || !listaAreas.some(([x]) => x === STATE.area));

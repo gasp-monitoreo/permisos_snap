@@ -466,3 +466,24 @@ def presion_nacional(tipo=None):
             res.append(a)
     res.sort(key=lambda x: (-x['activos'], x['area']))
     return res
+
+
+# ─── Áreas protegidas por región de cada permiso (para filtrar por ámbito) ─────
+_areas_region_cache = {}
+
+
+def con_areas_por_region(lista):
+    """Copia de los trámites con «areas_region» = {región: [áreas]} según el formulario
+    (campos region_de_<x>). Así, en un permiso multirregional, al elegir una región solo
+    cuentan las áreas que declaró para esa región."""
+    res = []
+    for t in lista:
+        clave = (t.get('id'), t.get('fecha_modificacion'))
+        apr = _areas_region_cache.get(clave)
+        if apr is None:
+            apr = {r: list(dict.fromkeys(a)) for r, a in areas_por_region(t).items()}
+            if len(_areas_region_cache) > 20000:
+                _areas_region_cache.clear()
+            _areas_region_cache[clave] = apr
+        res.append({**t, 'areas_region': apr})
+    return res

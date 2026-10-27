@@ -361,7 +361,7 @@ function _resLimpiarFiltros() {
 
 // Área(s) del permiso; si hay un área elegida en el ámbito, va primero
 function _resLugar(t) {
-  const areas = [...(t.areas_protegidas || [])];
+  const areas = [...(STATE.region && areasEnRegion(t, STATE.region).length ? areasEnRegion(t, STATE.region) : t.areas_protegidas || [])];
   if (STATE.area) areas.sort((x, y) => areaCoincide(y, STATE.area) - areaCoincide(x, STATE.area));
   const lista = areas.length ? areas : t.regiones_list || [];
   return lista.slice(0, 2).join(', ') + (lista.length > 2 ? ` +${lista.length - 2}` : '') || '–';
@@ -460,7 +460,7 @@ function _resRepintar() {
 // 5b) Áreas protegidas de la región (escala región): mismas columnas que la matriz de regiones
 function _resAreas(ts, region) {
   const porArea = new Map();
-  ts.forEach(t => (t.areas_protegidas?.length ? t.areas_protegidas : ['Sin área indicada']).forEach(a => {
+  ts.forEach(t => (areasEnRegion(t, region).length ? areasEnRegion(t, region) : ['Sin área indicada']).forEach(a => {
     if (!porArea.has(a)) porArea.set(a, []);
     porArea.get(a).push(t);
   }));

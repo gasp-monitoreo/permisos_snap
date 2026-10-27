@@ -46,8 +46,9 @@ def _region_forzada(request):
 
 def _filtrar_region(request, lista):
     from .ajustes import aplicar
+    from .presion import con_areas_por_region
     reg = _region_forzada(request)
-    return aplicar(lista if not reg else [t for t in lista if reg in (t.get('regiones_list') or [])])
+    return con_areas_por_region(aplicar(lista if not reg else [t for t in lista if reg in (t.get('regiones_list') or [])]))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -32,7 +32,7 @@ function _atnDiasAtraso(t, hoy) {
 // Escala (porArea): false = país (agrupa por región) · 'area' = región (por área) · 'etapa' = área (por etapa)
 function _atnGrupos(t, porArea) {
   if (porArea === 'etapa') return [t.etapa_actual?.tarea_nombre || 'Etapa en curso'];
-  if (porArea) return t.areas_protegidas?.length ? t.areas_protegidas : ['Sin área indicada'];
+  if (porArea) { const a = areasEnRegion(t, STATE.region); return a.length ? a : ['Sin área indicada']; }
   return t.regiones_list?.length ? t.regiones_list : ['Sin región indicada'];
 }
 
