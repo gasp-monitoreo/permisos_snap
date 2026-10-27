@@ -2095,17 +2095,18 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
   border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
 .fx-tabs button span { font-size: 11.5px; background: var(--surface2); border-radius: 99px; padding: 1px 7px; margin-left: 2px; }
 .fx-tabs button[aria-selected="true"] { color: var(--em-900); border-bottom-color: var(--em-600); }
-.fx-panel { padding: 18px 26px 0; }
+.fx-panel { padding: 14px 26px 0; }
 .fx-nota { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 12px; }
 .fx-panel h4 { font-size: 12px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--em-700); margin: 18px 0 8px; }
 .fx-panel h4 small { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--muted); }
 
-.fx-tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-.fx-tarjeta { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface); }
+.fx-tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; grid-auto-flow: row dense; }
+.fx-tarjeta { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; background: var(--surface); }
+.fx-tarjeta.fx-media { grid-column: span 2; }
 .fx-tarjeta.fx-larga { grid-column: 1 / -1; }
 .fx-tarjeta h4 { margin: 0 0 6px; }
-.fx-tarjeta p { font-size: 13.5px; line-height: 1.55; white-space: pre-line; text-align: justify; hyphens: auto; }
-.fx-mini { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 14px; padding: 12px 14px; background: var(--surface2); border-radius: 12px; }
+.fx-tarjeta p { font-size: 13.5px; line-height: 1.5; white-space: pre-line; text-align: justify; hyphens: auto; }
+.fx-mini { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 16px; margin-top: 10px; padding: 10px 14px; background: var(--surface2); border-radius: 10px; }
 .fx-mini span { display: block; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 700; }
 .fx-mini strong { font-size: 13.5px; font-weight: 600; }
 .fx-filtro { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface2); font: 14px 'DM Sans', sans-serif; margin-bottom: 14px; }
@@ -2216,3 +2217,5 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
 
 /* Textos largos justificados en la ficha */
 .fx-panel .modal-kv-item--full .value, .fx-motivo p, .fx-cum-cuerpo p { text-align: justify; hyphens: auto; }
+@media (max-width: 760px) { .fx-tarjeta.fx-media { grid-column: auto; } }
+.fx-tarjeta:not(.fx-media):not(.fx-larga) p { text-align: left; }

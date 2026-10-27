@@ -30,6 +30,11 @@ window.Ficha = (() => {
     return m ? new Date(+m[1], +m[2] - 1, +m[3], 12) : null;
   }
 
+  // Los formularios traen saltos de línea en medio de las frases: se unen las líneas y se
+  // conservan solo los párrafos (línea en blanco o viñeta), así el texto se justifica a todo el ancho.
+  const parrafos = v => String(v || '').replace(/\r/g, '').split(/\n\s*\n|\n(?=\s*[-•*·]\s|\s*\d+[.)]\s)/)
+    .map(x => x.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()).filter(Boolean).join('\n');
+
   // Primer campo del formulario cuyo nombre calza con alguno de los patrones
   function campo(datos, ...patrones) {
     for (const p of patrones) {
@@ -203,7 +208,11 @@ window.Ficha = (() => {
     const { ini, fin } = periodo(t);
     return `<div class="fx-resumen">
       ${piezas.banners}
-      ${tarjetas.length ? `<div class="fx-tarjetas">${tarjetas.map(([k, v]) => `<article class="fx-tarjeta${v.length > 260 ? ' fx-larga' : ''}"><h4>${k}</h4><p>${escHtml(v)}</p></article>`).join('')}</div>`
+      ${tarjetas.length ? `<div class="fx-tarjetas">${tarjetas.map(([k, v]) => {
+        const txt = parrafos(v);
+        const ancho = txt.length > 700 ? ' fx-larga' : txt.length > 220 ? ' fx-media' : '';
+        return `<article class="fx-tarjeta${ancho}"><h4>${k}</h4><p>${escHtml(txt)}</p></article>`;
+      }).join('')}</div>`
         : '<p class="fx-nota">El formulario no trae objetivo, metodología ni especies. Revise «Solicitud completa».</p>'}
       <div class="fx-mini">
         <div><span>Período en terreno</span><strong>${ini ? `${ini.toLocaleDateString('es-CL')} → ${(fin || ini).toLocaleDateString('es-CL')}` : '–'}</strong></div>
