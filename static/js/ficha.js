@@ -152,7 +152,7 @@ window.Ficha = (() => {
     return res;
   }
 
-  function lineaDeTiempo(t, et) {
+  function lineaDeTiempo(t, et, entregaOk) {
     const tr = tramos(et);
     const ingreso = t.fecha_inicio ? new Date(t.fecha_inicio) : null;
     if (!ingreso || !tr.length) return '';
@@ -193,7 +193,7 @@ window.Ficha = (() => {
       ['Ingreso', ingreso, true],
       [t.estado === 'rechazado' ? 'Rechazo' : 'Resolución', res, !!res, res ? `${d(+res - +ingreso)} días` : 'pendiente'],
       ...(aIni ? [['En terreno', aIni, +aIni <= +hoy, `${fecha(aIni)} → ${fecha(aFin || aIni)}`]] : []),
-      ...(n6 && t.estado !== 'rechazado' ? [['Entrega de resultados', n6, !!(window.STATE && getArchivosTramite(t.id, t.nombre_solicitante || '')?.archivos.length), `plazo ${fecha(n6)}`]] : []),
+      ...(n6 && t.estado !== 'rechazado' ? [['Entrega de resultados', n6, !!entregaOk, `plazo ${fecha(n6)}`]] : []),
     ];
     return `<section class="fx-lt" aria-label="Resumen de tiempos del permiso">
       <div class="fx-lt-cab"><strong ${tip('<strong>Tiempo total del trámite</strong><br><small>Desde el ingreso hasta que se cerró la última etapa (o hasta hoy, si sigue abierto). Pase el cursor sobre la barra para ver cada tramo.</small>')}>${d(total)} días de trámite</strong><span>${t.estado === 'pendiente' ? 'en curso' : 'desde el ingreso hasta la última etapa'} ·
@@ -440,7 +440,7 @@ window.Ficha = (() => {
       </header>
       ${!window.PERFIL?.ve_sensible && window.avisoPrivacidad ? `<div class="fx-aviso">${window.avisoPrivacidad()}</div>` : ''}
       ${situacion(t, et, piezas)}
-      <div id="fx-tl-host">${lineaDeTiempo(t, et)}</div>
+      <div id="fx-tl-host">${lineaDeTiempo(t, et, piezas.entregaOk)}</div>
       <nav class="fx-tabs" role="tablist">${tabs.map(([id, nombre, n], i) => `<button role="tab" data-fx-tab="${id}" aria-selected="${i === 0}">${nombre}${n !== '' && n !== 0 ? ` <span>${n}</span>` : ''}</button>`).join('')}</nav>
       ${tabs.map(([id, , , cont], i) => `<section class="fx-panel" data-fx-panel="${id}" role="tabpanel" ${i ? 'hidden' : ''}>${cont}</section>`).join('')}
     </div>`;
