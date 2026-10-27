@@ -789,9 +789,12 @@ function areasEnRegion(t, region) {
   if (!region) return t.areas_protegidas || [];
   const porRegion = t.areas_region?.[region];
   if (porRegion?.length) return porRegion;
-  // Si el trámite tiene desglose por región pero no para esta, no mezclar con otras regiones
-  if (t.areas_region && Object.keys(t.areas_region).length > 0) return [];
-  // Sin desglose: mostrar todas las áreas del trámite si está en esta región
+  // Solo bloquear fallback si hay áreas estructuradas en OTRAS regiones (multirregional con desglose)
+  const tieneOtras = t.areas_region
+    ? Object.entries(t.areas_region).some(([r, arr]) => r !== region && arr.length > 0)
+    : false;
+  if (tieneOtras) return [];
+  // Sin desglose cruzado: mostrar todas las áreas del trámite en esta región
   if ((t.regiones_list || []).includes(region)) return t.areas_protegidas || [];
   return [];
 }
