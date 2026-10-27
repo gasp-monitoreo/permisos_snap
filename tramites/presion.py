@@ -51,11 +51,20 @@ _ARREGLOS = {
 }
 
 
+_RENOMBRAR_AREA = [
+    (re.compile(r'\breserva forestal\s+uble\b', re.IGNORECASE), 'Reserva Nacional Ñuble'),
+    (re.compile(r'\breserva forestal\b', re.IGNORECASE),        'Reserva Nacional'),
+]
+
+
 def nombre_area(clave):
     """'parque_nacional__nevado_de_tres_cruces' → 'Parque Nacional Nevado de Tres Cruces'."""
     palabras = [p for p in re.split(r'[_\s]+', str(clave).strip()) if p]
     palabras = [_ARREGLOS.get(p.lower(), p) for p in palabras]
-    return ' '.join(p if i and p.lower() in _MINUS else p[:1].upper() + p[1:] for i, p in enumerate(palabras))
+    nombre = ' '.join(p if i and p.lower() in _MINUS else p[:1].upper() + p[1:] for i, p in enumerate(palabras))
+    for patron, reemplazo in _RENOMBRAR_AREA:
+        nombre = patron.sub(reemplazo, nombre)
+    return nombre
 
 
 def _clave_area(nombre):

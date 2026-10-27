@@ -509,7 +509,11 @@ function humanizarArea(raw) {
     .map(s => s.trim().replace(/^['"]|['"]$/g, ''))
     .filter(s => s && !_IGNORAR_VAL.test(s))
     .map(humanizarSlug)
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(s => s
+      .replace(/\bReserva Forestal\s+Uble\b/i, 'Reserva Nacional Ñuble')
+      .replace(/\bReserva Forestal\b/gi, 'Reserva Nacional')
+    );
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────
