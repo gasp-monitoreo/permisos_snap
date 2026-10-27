@@ -147,6 +147,24 @@ def get_tramites(
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=500)
 
 
+@api.get('/debug/areas/{tramite_id}')
+@requiere(accion='editar')
+def debug_areas(request, tramite_id: int):
+    """Diagnóstico: muestra datos_raw y areas_por_region para un trámite."""
+    from .presion import areas_por_region
+    data     = api_get(f'/tramites/{tramite_id}')
+    t        = normalize_tramite(data.get('tramite', data))
+    datos_raw = t.get('datos_raw') or {}
+    return {
+        'tramite_id':    tramite_id,
+        'regiones_list': t.get('regiones_list'),
+        'areas_protegidas': t.get('areas_protegidas'),
+        'campos_region': {k: v for k, v in datos_raw.items() if 'region' in k.lower()},
+        'campos_area':   {k: v for k, v in datos_raw.items() if any(x in k.lower() for x in ('area', 'parque', 'reserva', 'monumento', 'santuario', 'unidad'))},
+        'areas_por_region': areas_por_region(t),
+    }
+
+
 @api.get('/tramites/{tramite_id}')
 def get_tramite(request, tramite_id: int):
     try:
