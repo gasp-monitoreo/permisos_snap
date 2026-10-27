@@ -36,6 +36,7 @@ def puede_ajustar(user, t):
     if user.is_superuser:
         return True
     from .usuarios import perfil_de
+    from .core import INVESTIGACION_PROCESO_IDS
     p = perfil_de(user)
     if not p.puede('editar'):
         return False
@@ -44,6 +45,11 @@ def puede_ajustar(user, t):
     if p.areas:
         mias = {_norm(a) for a in p.areas}
         if not any(_norm(a) in mias or any(m in _norm(a) for m in mias) for a in (t.get('areas_protegidas') or [])):
+            return False
+    # Restricción por tipo: inv solo edita inv, film solo edita film
+    if p.tipo in ('inv', 'film'):
+        tramite_tipo = 'inv' if t.get('proceso_id') in INVESTIGACION_PROCESO_IDS else 'film'
+        if p.tipo != tramite_tipo:
             return False
     return True
 

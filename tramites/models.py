@@ -80,12 +80,8 @@ TIPOS_PERFIL = [('inv', 'Investigación'), ('film', 'Filmación y fotografía'),
 
 
 def secciones_por_defecto(tipo):
-    base = ['portada', 'busqueda']
-    if tipo in ('inv', 'ambos', 'nacional'):
-        base.append('resumen_inv')
-    if tipo in ('film', 'ambos', 'nacional'):
-        base.append('resumen_film')
-    return base
+    # Todos los perfiles ven ambos resúmenes; el tipo solo restringe qué pueden editar
+    return ['portada', 'resumen_inv', 'resumen_film', 'busqueda']
 
 
 class PerfilUsuario(models.Model):
