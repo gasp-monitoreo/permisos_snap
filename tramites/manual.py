@@ -22,6 +22,7 @@ CAPITULOS = {
     'areas': {'resumen_inv', 'resumen_film'},
     'detalle': {'resumen_inv', 'resumen_film', 'busqueda'},
     'buscar': {'busqueda', 'exportar'},
+    'seguimiento': {'resumen_inv', 'resumen_film'},
 }
 NOMBRES_SECCION = {'portada': 'Portada', 'resumen_inv': 'Investigación · Resumen',
                    'resumen_film': 'Filmación y Fotografía · Resumen', 'busqueda': 'Búsqueda',

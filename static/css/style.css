@@ -1683,6 +1683,26 @@ a.sb-logout { text-decoration: none; }
 .usr-acc button { background: none; border: 1px solid transparent; border-radius: 7px; cursor: pointer; font-size: 15px; padding: 3px 6px; }
 .usr-acc button:hover { background: var(--surface2); border-color: var(--border); }
 .usr-nota { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+/* ── Historial de auditoría ── */
+.hist-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.hist-table th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+.hist-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.hist-fila:hover td { background: var(--surface2); }
+.hist-fila--rev td { opacity: .55; }
+.hist-ico { font-size: 16px; text-align: center; width: 32px; }
+.hist-usuario { max-width: 170px; word-break: break-word; color: var(--muted); font-size: 11.5px; }
+.hist-accion { white-space: nowrap; font-weight: 600; }
+.hist-desc { max-width: 340px; word-break: break-word; color: var(--text); }
+.hist-acc { white-space: nowrap; text-align: right; }
+.hist-obj { color: var(--muted); font-size: 11.5px; }
+.hist-rev { background: none; border: 1px solid var(--border); border-radius: 7px; cursor: pointer; font-size: 12px; padding: 3px 8px; color: var(--accent); }
+.hist-rev:hover { background: var(--surface2); }
+.hist-rev:disabled { opacity: .5; cursor: wait; }
+.hist-tag { font-size: 11px; padding: 2px 7px; border-radius: 5px; font-weight: 600; }
+.hist-tag--rev { background: var(--surface2); color: var(--muted); }
+.hist-tramite { background: none; border: none; cursor: pointer; color: var(--accent); font-size: 12px; text-decoration: underline; padding: 0; }
+.hist-pag-info { font-size: 12px; color: var(--muted); }
 .usr-form { display: flex; flex-direction: column; gap: 12px; }
 .usr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .usr-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--muted); }

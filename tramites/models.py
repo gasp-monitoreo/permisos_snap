@@ -272,3 +272,68 @@ class DriveFolderMap(models.Model):
 
     def __str__(self):
         return f'{self.folder_name} → {self.tramite_ids}'
+
+
+# ─── Historial de auditoría (superusuario) ────────────────────────────────────
+ACCIONES_AUDITORIA = [
+    ('ajuste_creado',        'Ajuste de estado registrado'),
+    ('acceso_creado',        'Acceso temporal generado'),
+    ('acceso_revocado',      'Acceso temporal revocado'),
+    ('archivo_subido',       'Archivo entregado subido'),
+    ('usuario_creado',       'Usuario creado'),
+    ('usuario_editado',      'Perfil de usuario editado'),
+    ('password_restablecida','Contraseña restablecida'),
+    ('registro_creado',      'Registro geográfico creado'),
+    ('registro_editado',     'Registro geográfico editado'),
+    ('registro_borrado',     'Registro geográfico eliminado'),
+]
+
+ACCIONES_REVERSIBLES = {
+    'ajuste_creado',
+    'acceso_creado',
+    'archivo_subido',
+    'usuario_editado',
+    'registro_creado',
+    'registro_editado',
+}
+
+
+class AuditLog(models.Model):
+    """Registro inmutable de acciones relevantes realizadas por usuarios.
+    Solo el superusuario puede verlo. Permite revertir acciones específicas."""
+    usuario_id     = models.IntegerField(null=True, db_index=True)
+    usuario_nombre = models.CharField(max_length=255, blank=True)
+    accion         = models.CharField(max_length=30, choices=ACCIONES_AUDITORIA, db_index=True)
+    objeto_tipo    = models.CharField(max_length=20, blank=True)   # tramite, acceso, ajuste, usuario, registro, archivo
+    objeto_id      = models.CharField(max_length=40, blank=True)   # ID del objeto afectado
+    descripcion    = models.TextField()
+    datos          = models.JSONField(default=dict, blank=True)     # datos para revertir
+    ip             = models.GenericIPAddressField(null=True, blank=True)
+    creado_en      = models.DateTimeField(auto_now_add=True, db_index=True)
+    revertido      = models.BooleanField(default=False)
+    revertido_por  = models.IntegerField(null=True)
+    revertido_en   = models.DateTimeField(null=True)
+    revertido_nota = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-creado_en', '-id']
+
+    @property
+    def es_reversible(self):
+        return not self.revertido and self.accion in ACCIONES_REVERSIBLES
+
+    def como_dict(self):
+        return {
+            'id': self.id,
+            'usuario_nombre': self.usuario_nombre,
+            'accion': self.accion,
+            'accion_nombre': dict(ACCIONES_AUDITORIA).get(self.accion, self.accion),
+            'objeto_tipo': self.objeto_tipo,
+            'objeto_id': self.objeto_id,
+            'descripcion': self.descripcion,
+            'ip': self.ip,
+            'creado_en': self.creado_en.isoformat() if self.creado_en else None,
+            'revertido': self.revertido,
+            'revertido_nota': self.revertido_nota,
+            'es_reversible': self.es_reversible,
+        }

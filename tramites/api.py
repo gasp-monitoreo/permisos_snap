@@ -657,6 +657,13 @@ def investigaciones_upload(
         except Exception as exc:
             errores.append(f'{fname}: {exc}')
 
+    if guardados:
+        from .auditoria import registrar as _audit
+        for fname in guardados:
+            ruta = os.path.join(destino, fname)
+            _audit(request, 'archivo_subido', 'archivo', tramite_id,
+                   f'Archivo subido al trámite #{tramite_id}: {fname}',
+                   {'ruta': ruta, 'nombre': fname, 'tramite_id': tramite_id, 'nombre_carpeta': nombre_carpeta})
     return {'ok': True, 'guardados': guardados, 'errores': errores,
             'carpeta': f'{carpeta_base}/{tramite_id}'}
 
@@ -790,6 +797,10 @@ def usuarios_crear(request):
     u.save()
     p.save()
     clave = restablecer_clave(u)
+    from .auditoria import registrar as _audit
+    _audit(request, 'usuario_creado', 'usuario', u.pk,
+           f'Usuario creado: {u.email} (perfil: {tipo})',
+           {'usuario_id': u.pk, 'email': u.email, 'tipo': tipo})
     return {'ok': True, 'usuario': _usuario_dict(u), 'clave_temporal': clave}
 
 
@@ -801,9 +812,19 @@ def usuarios_editar(request, uid: int):
     if not u:
         return api.create_response(request, {'ok': False, 'error': 'Usuario no encontrado.'}, status=404)
     p = perfil_de(u)
+    antes = {
+        'nombre': u.get_full_name(), 'activo': u.is_active,
+        'tipo': p.tipo, 'region': p.region, 'solo_su_region': p.solo_su_region,
+        'areas': p.areas, 'secciones': p.secciones,
+        'puede_agregar': p.puede_agregar, 'puede_editar': p.puede_editar, 'puede_borrar': p.puede_borrar,
+    }
     _aplicar_datos(u, p, _cuerpo(request))
     u.save()
     p.save()
+    from .auditoria import registrar as _audit
+    _audit(request, 'usuario_editado', 'usuario', u.pk,
+           f'Perfil editado: {u.email}',
+           {'usuario_id': u.pk, 'email': u.email, 'antes': antes})
     return {'ok': True, 'usuario': _usuario_dict(u)}
 
 
@@ -829,7 +850,12 @@ def usuarios_restablecer(request, uid: int):
     u = get_user_model().objects.filter(id=uid).first()
     if not u or u.id == request.user.id:
         return api.create_response(request, {'ok': False, 'error': 'Usuario no válido.'}, status=400)
-    return {'ok': True, 'clave_temporal': restablecer_clave(u), 'usuario': _usuario_dict(u)}
+    nueva_clave = restablecer_clave(u)
+    from .auditoria import registrar as _audit
+    _audit(request, 'password_restablecida', 'usuario', u.pk,
+           f'Contraseña restablecida para: {u.email}',
+           {'usuario_id': u.pk, 'email': u.email})
+    return {'ok': True, 'clave_temporal': nueva_clave, 'usuario': _usuario_dict(u)}
 
 
 @api.post('/usuarios/encargados')
@@ -966,6 +992,10 @@ def accesos_generar(request):
         return api.create_response(request, {'ok': False, 'error': 'Trámite no encontrado.'}, status=404)
     acc, clave = generar_acceso(t, request.user)
     enlace = request.build_absolute_uri('/portal/ingresar')
+    from .auditoria import registrar as _audit
+    _audit(request, 'acceso_creado', 'acceso', acc.pk,
+           f'Acceso temporal generado para trámite #{tid} ({t.get("nombre_solicitante", "")[:80]})',
+           {'acceso_id': acc.pk, 'tramite_id': tid})
     return {'ok': True, 'acceso': acc.como_dict(), 'clave': clave, 'enlace': enlace}
 
 
@@ -988,6 +1018,10 @@ def accesos_revocar(request, acceso_id: int):
     if not acc:
         return api.create_response(request, {'ok': False, 'error': 'Acceso no encontrado.'}, status=404)
     revocar_acceso(acc)
+    from .auditoria import registrar as _audit
+    _audit(request, 'acceso_revocado', 'acceso', acc.pk,
+           f'Acceso del trámite #{acc.tramite_id} ({acc.solicitante[:60]}) revocado.',
+           {'acceso_id': acc.pk, 'tramite_id': acc.tramite_id})
     return {'ok': True, 'acceso': acc.como_dict()}
 
 
@@ -1351,6 +1385,11 @@ def ajustes_crear(request, tramite_id: int):
         return api.create_response(request, {'ok': False, 'error': error}, status=400)
     a = guardar(tramite_id, situacion, fecha, motivo, archivos, request.user)
     log.info('Ajuste de estado del trámite %s: %s por %s (%s adjuntos)', tramite_id, situacion, request.user.pk, len(archivos))
+    from .auditoria import registrar as _audit
+    from .models import SITUACIONES_AJUSTE as _SIT
+    _audit(request, 'ajuste_creado', 'tramite', tramite_id,
+           f'Ajuste "{dict(_SIT).get(situacion, situacion)}" en trámite #{tramite_id}: {motivo[:120]}',
+           {'ajuste_id': a.id, 'situacion': situacion, 'tramite_id': tramite_id})
     return {'ok': True, 'id': a.id}
 
 
@@ -1376,3 +1415,34 @@ def ajustes_adjunto(request, ajuste_id: int, n: int):
     resp['X-Content-Type-Options'] = 'nosniff'
     log.info('Respaldo de ajuste %s descargado por %s', ajuste_id, request.user.pk)
     return resp
+
+
+# ── Historial de auditoría (solo superusuario) ────────────────────────────────
+
+@api.get('/auditoria')
+@requiere(superusuario=True)
+def auditoria_listar(request):
+    from .models import AuditLog
+    qs = AuditLog.objects.all()
+    accion = request.GET.get('accion', '')
+    usuario = request.GET.get('usuario', '')
+    if accion:
+        qs = qs.filter(accion=accion)
+    if usuario:
+        qs = qs.filter(usuario_nombre__icontains=usuario)
+    total = qs.count()
+    page = max(1, int(request.GET.get('page', 1)))
+    size = 50
+    offset = (page - 1) * size
+    items = [a.como_dict() for a in qs[offset:offset + size]]
+    return {'ok': True, 'total': total, 'page': page, 'pages': max(1, (total + size - 1) // size), 'data': items}
+
+
+@api.post('/auditoria/{audit_id}/revertir')
+@requiere(superusuario=True)
+def auditoria_revertir(request, audit_id: int):
+    from .auditoria import revertir
+    ok, msg = revertir(audit_id, request.user)
+    if not ok:
+        return api.create_response(request, {'ok': False, 'error': msg}, status=400)
+    return {'ok': True, 'mensaje': msg}

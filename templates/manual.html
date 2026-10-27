@@ -216,6 +216,7 @@ dl.glosario dd { margin: 0; }
         <li><a href="#detalle">Ver el detalle de un trámite</a></li>
         <li><a href="#buscar"><!--titulo-buscar-->Buscar y exportar<!--/titulo-buscar--></a></li>
         <li><a href="#perfiles">Perfiles y permisos</a></li>
+        <li><a href="#seguimiento">Seguimiento y gestión de permisos</a></li>
 <!--INDICE-ADMIN-->
         <li><a href="#preguntas">Preguntas frecuentes</a></li>
         <li><a href="#glosario">Glosario</a></li>
@@ -573,6 +574,93 @@ dl.glosario dd { margin: 0; }
       <div class="aviso consejo">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
         <p><b>¿Necesita algo que no ve?</b>Pida al administrador que agregue la sección o el permiso a su perfil. El cambio se aplica la próxima vez que abra la plataforma.</p>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section class="capitulo" id="seguimiento">
+      <header><span class="num" id="num-seguimiento">12</span><h2>Seguimiento y gestión de permisos</h2></header>
+      <p class="texto lead">Estas acciones permiten registrar lo que ocurre con un permiso después de emitido: dar acceso al investigador para que marque sus sitios de muestreo, corregir el estado real del permiso cuando Cero Filas no lo refleja, y cargar los archivos que el titular entrega en el marco del Numeral 6 del Reglamento.</p>
+      <div class="aviso consejo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <p>Todas estas acciones requieren el permiso <strong>Editar</strong> en el perfil, y solo aplican a los permisos de la región o áreas protegidas a cargo del funcionario.</p>
+      </div>
+
+      <h3 id="seguimiento-acceso">Dar acceso temporal a un investigador para agregar coordenadas</h3>
+      <p class="texto">El investigador marca sus puntos de muestreo, transectos y parcelas en el <strong>portal del investigador</strong>, que es distinto a la plataforma principal. Para que pueda ingresar, el administrador genera un enlace y una clave temporales desde el detalle del trámite.</p>
+      <div class="dupla">
+        <div class="texto">
+          <ol class="pasos">
+            <li><div>Abra el trámite del investigador y vaya a la pestaña <strong>Cumplimiento del titular</strong>.</div></li>
+            <li><div>En la tarjeta «Registro geográfico», haga clic en <span class="boton verde">Generar acceso</span>.</div></li>
+            <li><div>La plataforma crea un usuario temporal. Aparecen el <strong>enlace al portal</strong>, el <strong>usuario</strong> (el correo registrado en Cero Filas) y la <strong>clave temporal</strong> (se muestra solo esta vez).</div></li>
+            <li><div>Envíe esos tres datos al investigador por correo o por otro canal seguro.</div></li>
+            <li><div>El investigador ingresa al portal, carga sus puntos y el registro queda visible en la plataforma y en el mapa territorial.</div></li>
+          </ol>
+        </div>
+        <div class="texto">
+          <div class="aviso importante">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <p>La clave se muestra <strong>una sola vez</strong>. Si el investigador la pierde, genera un nuevo acceso desde el mismo lugar y se revoca el anterior automáticamente.</p>
+          </div>
+          <p style="margin-top:12px">Para revocar el acceso antes de que venza, use el botón <span class="boton">Revocar acceso</span> en la pestaña Cumplimiento o en la lista de accesos del administrador.</p>
+          <p>El acceso vence solo 90 días después del término declarado del permiso.</p>
+        </div>
+      </div>
+
+      <h3 id="seguimiento-estado">Cambiar el estado de un permiso (ajuste de estado)</h3>
+      <p class="texto">Cuando el estado que muestra Cero Filas no refleja la realidad (el solicitante desistió, se rechazó por otra vía, es un duplicado…), se registra un ajuste de estado directamente en la plataforma. El ajuste queda en el historial con su autor y fecha, y se refleja en toda la plataforma sin modificar Cero Filas.</p>
+      <div class="dupla">
+        <div class="texto">
+          <ol class="pasos">
+            <li><div>Abra el trámite y haga clic en la pestaña <strong>Seguimiento CONAF</strong>.</div></li>
+            <li><div>Haga clic en <span class="boton verde">Ajustar estado</span>. Aparece el formulario de ajuste.</div></li>
+            <li><div>Elija el <strong>Estado real</strong>: <em>Desistido</em>, <em>Sin respuesta</em>, <em>Aprobado externamente</em>, <em>Rechazado externamente</em>, <em>Anulado</em> o <em>Sin ajuste (revertido)</em>.</div></li>
+            <li><div>Indique la <strong>fecha en que ocurrió</strong> el cambio (no necesariamente hoy).</div></li>
+            <li><div>Escriba una <strong>justificación</strong> de al menos 30 caracteres: qué ocurrió, cómo se supo y quién lo informó.</div></li>
+            <li><div>(Opcional) Adjunte <strong>respaldos</strong>: correos .eml o .msg, PDF, imágenes.</div></li>
+            <li><div>Haga clic en <span class="boton verde">Registrar ajuste</span>. El estado se actualiza de inmediato en toda la plataforma.</div></li>
+          </ol>
+        </div>
+        <div class="texto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:4px">
+            <thead><tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Estado</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Cuándo usarlo</th></tr></thead>
+            <tbody>
+              <tr><td style="padding:5px 8px;border-bottom:1px solid #eee"><strong>Desistido</strong></td><td style="padding:5px 8px;border-bottom:1px solid #eee">El solicitante comunicó que no seguirá adelante</td></tr>
+              <tr><td style="padding:5px 8px;border-bottom:1px solid #eee"><strong>Sin respuesta</strong></td><td style="padding:5px 8px;border-bottom:1px solid #eee">Se cerró porque el solicitante no respondió</td></tr>
+              <tr><td style="padding:5px 8px;border-bottom:1px solid #eee"><strong>Aprobado externamente</strong></td><td style="padding:5px 8px;border-bottom:1px solid #eee">Aprobado fuera de Cero Filas (papel u otro sistema)</td></tr>
+              <tr><td style="padding:5px 8px;border-bottom:1px solid #eee"><strong>Rechazado externamente</strong></td><td style="padding:5px 8px;border-bottom:1px solid #eee">Rechazado fuera de Cero Filas</td></tr>
+              <tr><td style="padding:5px 8px;border-bottom:1px solid #eee"><strong>Anulado</strong></td><td style="padding:5px 8px;border-bottom:1px solid #eee">Duplicado o error de ingreso</td></tr>
+              <tr><td style="padding:5px 8px"><strong>Sin ajuste (revertir)</strong></td><td style="padding:5px 8px">Deshacer el último ajuste y volver al estado de Cero Filas</td></tr>
+            </tbody>
+          </table>
+          <div class="aviso consejo" style="margin-top:12px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <p>Los ajustes no se borran: el historial queda completo. Para deshacer un ajuste, registre uno nuevo con la opción <em>Sin ajuste (revertido)</em>.</p>
+          </div>
+        </div>
+      </div>
+
+      <h3 id="seguimiento-numeral6">Subir archivos entregados por el titular (Numeral 6)</h3>
+      <p class="texto">El Numeral 6 del Reglamento exige que el investigador entregue a CONAF los resultados de su investigación (informe final, publicaciones, material fotográfico, etc.) dentro de 3 años desde el término del trámite. Cuando el titular entrega esos archivos, el funcionario los sube desde la plataforma para dejar constancia.</p>
+      <div class="dupla">
+        <div class="texto">
+          <ol class="pasos">
+            <li><div>Abra el trámite y haga clic en la pestaña <strong>Cumplimiento del titular</strong>.</div></li>
+            <li><div>En la tarjeta «Entrega de resultados (Numeral 6)», haga clic en <span class="boton verde">Subir lo entregado por el titular</span>.</div></li>
+            <li><div>Aparece un formulario de carga. Escriba el <strong>nombre del investigador</strong> (se usa para organizar la carpeta) y el <strong>ID del trámite</strong> (ya viene precargado).</div></li>
+            <li><div>Seleccione los archivos (PDF, Word, Excel, imágenes; hasta 50 MB por archivo).</div></li>
+            <li><div>Haga clic en <span class="boton verde">Subir</span>. Los archivos quedan vinculados al trámite y la tarjeta del Numeral 6 cambia a <em>Cumplido</em>.</div></li>
+          </ol>
+        </div>
+        <div class="texto">
+          <div class="aviso importante">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <p>Para subir archivos se necesita el permiso <strong>Agregar</strong> en el perfil.</p>
+          </div>
+          <p style="margin-top:12px">Los archivos entregados también aparecen en la pestaña <strong>Documentos</strong> del trámite, junto con los adjuntos del formulario original.</p>
+          <p>El plazo del Numeral 6 corre desde la fecha de término de actividades declarada en el formulario. La plataforma lo calcula automáticamente y avisa cuando el plazo está próximo a vencer.</p>
+        </div>
       </div>
     </section>
 
