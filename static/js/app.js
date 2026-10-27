@@ -789,8 +789,9 @@ function areasEnRegion(t, region) {
   if (!region) return t.areas_protegidas || [];
   const porRegion = t.areas_region?.[region];
   if (porRegion?.length) return porRegion;
-  // Fallback para trámites sin desglose por región: si el trámite está en esa región usar todas sus áreas
-  if ((t.regiones_list || []).includes(region)) return t.areas_protegidas || [];
+  // Fallback solo para trámites unirregionales (multirregional sin desglose: no mezclar áreas de otras regiones)
+  const regs = t.regiones_list || [];
+  if (regs.length === 1 && regs[0] === region) return t.areas_protegidas || [];
   return [];
 }
 
@@ -1314,6 +1315,8 @@ function consolidarTemasPequenos(porTema, minItems) {
 
 function archivosDeFolder(data) {
   if (data.tipo === 'flat') return data.archivos || [];
+  // 'mapped': todos los IDs apuntan a los mismos archivos (DriveFolderMap); evitar duplicados
+  if (data.tipo === 'mapped') return Object.values(data.ids || {})[0] || [];
   return Object.values(data.ids || {}).flat();
 }
 
