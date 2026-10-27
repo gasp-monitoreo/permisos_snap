@@ -741,11 +741,74 @@ def tramite_n6_borrar(request, tramite_id: int, archivo_id: int):
         ar = EntregaN6.objects.get(pk=archivo_id, tramite_id=tramite_id)
     except EntregaN6.DoesNotExist:
         return api.create_response(request, {'ok': False, 'error': 'Archivo no encontrado.'}, status=404)
-    ruta = os.path.join(_n6_dir_api(tramite_id), ar.archivo)
-    if os.path.isfile(ruta):
-        os.remove(ruta)
+    if not ar.drive_id and ar.archivo:
+        ruta = os.path.join(_n6_dir_api(tramite_id), ar.archivo)
+        if os.path.isfile(ruta):
+            os.remove(ruta)
     ar.delete()
     return {'ok': True}
+
+
+def _t_para_drive(tramite_id: int):
+    """Retorna un dict mínimo {id, nombre_solicitante} suficiente para _entregas()."""
+    try:
+        data = api_get(f'/tramites/{tramite_id}')
+        t = data.get('tramite', data)
+        return normalize_tramite(t)
+    except Exception:
+        return {'id': tramite_id, 'nombre_solicitante': ''}
+
+
+@api.get('/tramites/{tramite_id}/n6/drive')
+@requiere(accion='agregar')
+def tramite_n6_drive_disponibles(request, tramite_id: int):
+    """Lista archivos Drive del trámite que aún no están vinculados como entrega N6."""
+    from .informe import _entregas
+    from .models import EntregaN6
+    archivos = _entregas(_t_para_drive(tramite_id)) or []
+    ya = set(EntregaN6.objects.filter(tramite_id=tramite_id).exclude(drive_id='').values_list('drive_id', flat=True))
+    disponibles = [a for a in archivos if a.get('drive_id') and a['drive_id'] not in ya]
+    return {'ok': True, 'archivos': disponibles}
+
+
+@api.post('/tramites/{tramite_id}/n6/vincular-drive')
+@requiere(accion='agregar')
+def tramite_n6_vincular_drive(request, tramite_id: int):
+    import json as _j
+    from .models import EntregaN6, TIPOS_ENTREGA
+    from .informe import _entregas
+    try:
+        data = _j.loads(request.body)
+    except Exception:
+        return api.create_response(request, {'ok': False, 'error': 'JSON inválido.'}, status=400)
+    drive_id = (data.get('drive_id') or '').strip()
+    nombre   = (data.get('nombre') or '').strip()[:255]
+    tipo     = data.get('tipo', 'informe')
+    if not drive_id:
+        return api.create_response(request, {'ok': False, 'error': 'Falta drive_id.'}, status=400)
+    if EntregaN6.objects.filter(tramite_id=tramite_id, drive_id=drive_id).exists():
+        return api.create_response(request, {'ok': False, 'error': 'Archivo ya vinculado.'}, status=409)
+    archivos = _entregas(_t_para_drive(tramite_id)) or []
+    match = next((a for a in archivos if a.get('drive_id') == drive_id), None)
+    if not match:
+        return api.create_response(request, {'ok': False, 'error': 'Archivo no encontrado en Drive para este trámite.'}, status=404)
+    if tipo not in dict(TIPOS_ENTREGA):
+        tipo = 'otro'
+    ar = EntregaN6.objects.create(
+        tramite_id=tramite_id,
+        nombre=nombre or match.get('nombre', drive_id),
+        tipo=tipo,
+        archivo='',
+        tamano=match.get('tamano', 0),
+        drive_id=drive_id,
+        drive_url=match.get('url', ''),
+        subido_por=request.user,
+    )
+    from .auditoria import registrar as _audit
+    _audit(request, 'archivo_subido', 'n6', str(tramite_id),
+           f'Archivo Drive vinculado al trámite #{tramite_id}: {ar.nombre}',
+           {'drive_id': drive_id, 'nombre': ar.nombre, 'tramite_id': tramite_id})
+    return {'ok': True, 'archivo': ar.como_dict()}
 
 
 # ── Traducción ────────────────────────────────────────────────────────────────

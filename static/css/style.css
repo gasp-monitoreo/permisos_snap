@@ -1896,6 +1896,10 @@ a.sb-logout { text-decoration: none; }
 .n6-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; font-weight: 600; }
 .n6-form input, .n6-form select, .n6-form textarea { font-weight: 400; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px; font-size: 13.5px; background: var(--surface2); }
 .n6-credenciales { flex-basis: 100%; display: flex; flex-direction: column; gap: 10px; }
+.n6-drive-lista { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.n6-drive-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; }
+.n6-drive-item .n6-info { flex: 1; min-width: 0; }
+.n6-drive-item .n6-info small { display: block; color: var(--muted); font-size: 12px; }
 
 /* ── Vista territorial (static/js/territorio.js) ── */
 .territorio { margin-bottom: 22px; }

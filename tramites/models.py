@@ -290,13 +290,15 @@ N6_EXTENSIONS = {'.pdf', '.doc', '.docx', '.csv', '.xls', '.xlsx', '.pptx', '.od
 
 class EntregaN6(models.Model):
     """Archivo entregado por el titular (o subido por CONAF) para el Numeral 6.
-    Se guarda en disco bajo INVESTIGACIONES_DIR/_n6/<tramite_id>/."""
+    Se guarda en disco bajo INVESTIGACIONES_DIR/_n6/<tramite_id>/ o se vincula desde Drive."""
     tramite_id  = models.IntegerField(db_index=True)
     nombre      = models.CharField(max_length=255)
     tipo        = models.CharField(max_length=20, choices=TIPOS_ENTREGA, default='informe')
     descripcion = models.TextField(blank=True)
-    archivo     = models.CharField(max_length=500)   # basename en disco
+    archivo     = models.CharField(max_length=500)   # basename en disco (vacío si es Drive)
     tamano      = models.IntegerField(default=0)     # bytes
+    drive_id    = models.CharField(max_length=200, blank=True, default='')  # Google Drive file ID
+    drive_url   = models.CharField(max_length=500, blank=True, default='')  # URL de descarga en Drive
     subido_por  = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, related_name='+')
     subido_en   = models.DateTimeField(auto_now_add=True)
 
@@ -315,7 +317,8 @@ class EntregaN6(models.Model):
             'nombre': self.nombre, 'tipo': self.tipo,
             'tipo_nombre': dict(TIPOS_ENTREGA).get(self.tipo, self.tipo),
             'descripcion': self.descripcion, 'archivo': self.archivo,
-            'tamano': self.tamano, 'es_investigador': es_inv,
+            'tamano': self.tamano, 'drive_id': self.drive_id, 'drive_url': self.drive_url,
+            'es_investigador': es_inv,
             'subido_por': (self.subido_por.get_full_name() or self.subido_por.username) if self.subido_por else '',
             'subido_en': self.subido_en.isoformat() if self.subido_en else None,
         }

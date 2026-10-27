@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════
    Entrega de resultados (Numeral 6) en el detalle del trámite (vista interna CONAF).
    Muestra los archivos entregados y, al superusuario / usuarios con agregar,
-   permite subir nuevos o generar/gestionar el acceso del investigador al portal N6.
+   permite subir nuevos, vincular archivos desde Drive, o gestionar el acceso del investigador.
    API: /api/tramites/{id}/n6/… y /api/accesos/… (tramites/api.py + portal.py)
    ═══════════════════════════════════════════════ */
 'use strict';
@@ -22,20 +22,29 @@ window.EntregaN6 = (() => {
     return d;
   }
 
+  function _enlaceArchivo(a) {
+    if (a.drive_url) return { href: a.drive_url, target: '_blank', rel: 'noopener', download: '' };
+    return { href: `/investigaciones/_n6/${a.tramite_id}/${encodeURIComponent(a.archivo)}`, target: '_blank', rel: 'noopener', download: escHtml(a.archivo) };
+  }
+
   function listaHtml(archivos, puedeSubir) {
     if (!archivos.length) return '<p class="rg-resumen">Aún no hay archivos entregados.</p>';
-    return `<ul class="n6-lista">${archivos.map(a => `<li class="n6-item">
-      <span class="n6-icono">📄</span>
-      <span class="n6-info">
-        <strong>${escHtml(a.nombre)}</strong>
-        <small>${escHtml(a.tipo_nombre)} · ${fmt(a.tamano)} · subido ${a.es_investigador ? 'por el titular' : 'por CONAF'} el ${fecha(a.subido_en)}</small>
-        ${a.descripcion ? `<em>${escHtml(a.descripcion)}</em>` : ''}
-      </span>
-      <span class="n6-acciones">
-        <a class="btn-secondary" href="/investigaciones/_n6/${a.tramite_id}/${encodeURIComponent(a.archivo)}" download="${escHtml(a.archivo)}">Descargar</a>
-        ${puedeSubir ? `<button class="btn-secondary n6-del" data-id="${a.id}">Eliminar</button>` : ''}
-      </span>
-    </li>`).join('')}</ul>`;
+    return `<ul class="n6-lista">${archivos.map(a => {
+      const { href, target, rel, download } = _enlaceArchivo(a);
+      const origen = a.drive_id ? ' · <span title="Vinculado desde Google Drive">📂 Drive</span>' : (a.es_investigador ? ' · titular' : ' · CONAF');
+      return `<li class="n6-item">
+        <span class="n6-icono">📄</span>
+        <span class="n6-info">
+          <strong>${escHtml(a.nombre)}</strong>
+          <small>${escHtml(a.tipo_nombre)}${a.tamano ? ` · ${fmt(a.tamano)}` : ''}${origen} · ${fecha(a.subido_en)}</small>
+          ${a.descripcion ? `<em>${escHtml(a.descripcion)}</em>` : ''}
+        </span>
+        <span class="n6-acciones">
+          <a class="btn-secondary" href="${href}" target="${target}" rel="${rel}"${download ? ` download="${download}"` : ''}>Descargar</a>
+          ${puedeSubir ? `<button class="btn-secondary n6-del" data-id="${a.id}">Eliminar</button>` : ''}
+        </span>
+      </li>`;
+    }).join('')}</ul>`;
   }
 
   function accesoN6Html(acc) {
@@ -75,6 +84,14 @@ CONAF`;
       <button class="btn-secondary" data-n6="copiar">Copiar mensaje para enviar al titular</button>`;
   }
 
+  function driveHtml(disponibles) {
+    if (!disponibles.length) return '<p class="fx-nota" style="margin:6px 0">No hay archivos en Drive sin vincular.</p>';
+    return `<ul class="n6-drive-lista">${disponibles.map(a => `<li class="n6-drive-item" data-drive-id="${escHtml(a.drive_id)}" data-nombre="${escHtml(a.nombre || '')}">
+      <span class="n6-info"><strong>${escHtml(a.nombre)}</strong>${a.tamano ? `<small>${fmt(a.tamano)}</small>` : ''}</span>
+      <button class="btn-secondary n6-vincular-btn">Vincular</button>
+    </li>`).join('')}</ul>`;
+  }
+
   // contenedor: donde va el bloque · alContar(n): avisa cuántos archivos hay
   async function montar(t, contenedor = null, alContar = null) {
     const body = contenedor || document.getElementById('modal-tramite-body');
@@ -84,6 +101,7 @@ CONAF`;
       <div class="detail-section-title">📋 Entrega de resultados (Numeral 6)</div>
       <div id="n6-cuerpo"><div class="empty-msg">Cargando…</div></div></div>`);
     const cuerpo = document.getElementById('n6-cuerpo');
+    const puedeSubir = !!window.PERFIL?.permisos?.agregar;
     let d, accD;
     try {
       [d, accD] = await Promise.all([
@@ -96,8 +114,11 @@ CONAF`;
     }
     if (!document.body.contains(cuerpo)) return;
     const acc = accD?.acceso || null;
-    const puedeSubir = !!window.PERFIL?.permisos?.agregar;
     if (alContar) alContar(d.archivos.length);
+    _renderCuerpo(cuerpo, t, d, acc, puedeSubir, alContar);
+  }
+
+  function _renderCuerpo(cuerpo, t, d, acc, puedeSubir, alContar) {
     cuerpo.innerHTML = `
       ${listaHtml(d.archivos, puedeSubir)}
       ${puedeSubir ? `<details class="n6-upload" id="n6-upload-det">
@@ -110,6 +131,10 @@ CONAF`;
           <p class="pt-error" id="n6-err-conaf" hidden></p>
           <button class="btn-primary" type="submit">Subir</button>
         </form>
+      </details>
+      <details class="n6-upload" id="n6-drive-det">
+        <summary class="fx-btn" style="cursor:pointer">Vincular desde Drive</summary>
+        <div id="n6-drive-cuerpo"><div class="empty-msg">Cargando archivos de Drive…</div></div>
       </details>` : ''}
       ${accesoN6Html(acc)}`;
 
@@ -133,7 +158,47 @@ CONAF`;
       }
     });
 
+    // vincular desde Drive: carga la lista al abrir el details
+    const driveDet = document.getElementById('n6-drive-det');
+    let driveDisponibles = null;
+    driveDet?.addEventListener('toggle', async () => {
+      if (!driveDet.open || driveDisponibles !== null) return;
+      const dc = document.getElementById('n6-drive-cuerpo');
+      try {
+        const r = await pedir(`/api/tramites/${t.id}/n6/drive`);
+        driveDisponibles = r.archivos;
+        dc.innerHTML = driveHtml(driveDisponibles);
+        _bindDrive(dc, t, d, driveDisponibles, puedeSubir, alContar, cuerpo, acc);
+      } catch (ex) {
+        dc.innerHTML = `<p class="pt-error">${escHtml(ex.message)}</p>`;
+      }
+    });
+
     _bindN6Acciones(cuerpo, t, d, acc, puedeSubir, alContar);
+  }
+
+  function _bindDrive(dc, t, d, disponibles, puedeSubir, alContar, cuerpo, acc) {
+    dc.querySelectorAll('.n6-vincular-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const li = btn.closest('[data-drive-id]');
+        const driveId = li.dataset.driveId;
+        const nombre  = li.dataset.nombre;
+        btn.disabled = true; btn.textContent = 'Vinculando…';
+        try {
+          const r = await pedir(`/api/tramites/${t.id}/n6/vincular-drive`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ drive_id: driveId, nombre, tipo: 'informe' }),
+          });
+          d.archivos.unshift(r.archivo);
+          if (alContar) alContar(d.archivos.length);
+          cuerpo.querySelector('.n6-lista, .rg-resumen').outerHTML = listaHtml(d.archivos, puedeSubir);
+          li.remove();
+          if (!dc.querySelector('[data-drive-id]')) dc.innerHTML = '<p class="fx-nota" style="margin:6px 0">Todos los archivos de Drive ya están vinculados.</p>';
+          _bindN6Acciones(cuerpo, t, d, acc, puedeSubir, alContar);
+        } catch (ex) { alert(ex.message); btn.disabled = false; btn.textContent = 'Vincular'; }
+      });
+    });
   }
 
   function _bindN6Acciones(cuerpo, t, d, acc, puedeSubir, alContar) {
