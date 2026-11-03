@@ -1669,9 +1669,12 @@ def convenios_filtros(request):
         'Valparaíso', 'Metropolitana', "O'Higgins", 'Maule', 'Ñuble',
         'Biobío', 'Araucanía', 'Los Ríos', 'Los Lagos', 'Aysén', 'Magallanes',
     ]
+    # Corrección de capitalización para nombres mal cargados en la BD
+    _CORRECCION = {r.upper(): r for r in _ORDEN_REGIONES}
     _idx = {r: i for i, r in enumerate(_ORDEN_REGIONES)}
     regiones_db = list(Convenio.objects.exclude(region='').values_list('region', flat=True).order_by().distinct())
-    regiones = sorted(regiones_db, key=lambda r: (_idx.get(r, len(_ORDEN_REGIONES)), r))
+    regiones_norm = list({_CORRECCION.get(r.upper(), r) for r in regiones_db})
+    regiones = sorted(regiones_norm, key=lambda r: (_idx.get(r, len(_ORDEN_REGIONES)), r))
     anios    = list(Convenio.objects.exclude(anio=None).values_list('anio', flat=True).distinct().order_by('-anio'))
     return {'ok': True, 'regiones': regiones, 'anios': anios}
 
