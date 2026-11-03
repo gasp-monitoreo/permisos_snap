@@ -1751,24 +1751,33 @@ def convenio_subir_pdf(request, conv_id: int):
         return api.create_response(request, {'ok': False, 'error': 'Solo se admiten archivos PDF'}, status=400)
 
     svc, err = get_drive_service()
+    if not err:
+        try:
+            from googleapiclient.http import MediaIoBaseUpload
+            media = MediaIoBaseUpload(archivo, mimetype='application/pdf', resumable=True)
+            meta  = {'name': archivo.name, 'parents': [CONVENIOS_DRIVE_FOLDER]}
+            f = svc.files().create(body=meta, media_body=media, fields='id, webViewLink').execute()
+            svc.permissions().create(
+                fileId=f['id'],
+                body={'type': 'anyone', 'role': 'reader'},
+            ).execute()
+            drive_id  = f['id']
+            drive_url = f.get('webViewLink') or f'https://drive.google.com/file/d/{drive_id}/view'
+        except Exception as e:
+            err = str(e)
+
     if err:
-        return api.create_response(request, {'ok': False, 'error': f'Drive no disponible: {err}'}, status=503)
-
-    try:
-        from googleapiclient.http import MediaIoBaseUpload
-        media = MediaIoBaseUpload(archivo, mimetype='application/pdf', resumable=True)
-        meta  = {'name': archivo.name, 'parents': [CONVENIOS_DRIVE_FOLDER]}
-        f = svc.files().create(body=meta, media_body=media, fields='id, webViewLink').execute()
-        # Hacer el archivo accesible para quien tenga el link
-        svc.permissions().create(
-            fileId=f['id'],
-            body={'type': 'anyone', 'role': 'reader'},
-        ).execute()
-    except Exception as e:
-        return api.create_response(request, {'ok': False, 'error': f'Error subiendo a Drive: {e}'}, status=500)
-
-    drive_id  = f['id']
-    drive_url = f.get('webViewLink') or f'https://drive.google.com/file/d/{drive_id}/view'
+        # Almacenamiento local como fallback
+        import uuid
+        from django.conf import settings as _s
+        nombre_local = f"{uuid.uuid4().hex}_{archivo.name}"
+        dest = _s.MEDIA_ROOT / 'convenios' / nombre_local
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, 'wb') as fh:
+            for chunk in archivo.chunks():
+                fh.write(chunk)
+        drive_id  = ''
+        drive_url = f'/media/convenios/{nombre_local}'
 
     if slot == '2':
         conv.nombre_archivo2 = archivo.name

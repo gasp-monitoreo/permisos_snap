@@ -202,6 +202,17 @@ def serve_foto(request, archivo):
     return resp
 
 
+@login_required
+def serve_convenio_pdf(request, filename):
+    """Sirve PDFs de convenios almacenados localmente."""
+    path = os.path.join(settings.MEDIA_ROOT, 'convenios', filename)
+    if not os.path.exists(path):
+        raise Http404(filename)
+    resp = FileResponse(open(path, 'rb'), content_type='application/pdf')
+    resp['Content-Disposition'] = f'inline; filename="{os.path.basename(filename)}"'
+    return resp
+
+
 def login_fotos(request):
     """Lista mínima de fotos para el carrusel del login (sin datos internos)."""
     from django.http import JsonResponse

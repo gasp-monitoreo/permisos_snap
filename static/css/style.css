@@ -2387,6 +2387,10 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
   padding: 2px 8px; white-space: nowrap; }
 .conv-pdf-link:hover { background: var(--em-200); }
 .conv-pdf-dl { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; margin-right: 8px; }
+.conv-subir-label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border: 1.5px dashed var(--border); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 500; color: var(--muted); margin-right: 8px; transition: all .15s; }
+.conv-subir-label:hover { border-color: var(--em-400); color: var(--em-700); background: var(--em-50); }
+.conv-upload-status { font-size: 12px; margin-top: 6px; color: var(--muted); }
+.conv-upload-status.error { color: #DC2626; }
 
 .conv-nombre .conv-ver-btn { background: none; border: 0; padding: 0; color: var(--em-700);
   font: inherit; cursor: pointer; text-align: left; text-decoration: underline; }

@@ -29,6 +29,39 @@
     return `<span class="conv-pill ${cls}">${esc(nombres[estado] || estado)}</span>`;
   }
 
+  const SVG_DOWNLOAD = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+  const SVG_UPLOAD   = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+
+  function pdfSlotHtml(c, slot) {
+    const url    = slot === 1 ? c.drive_url  : c.drive_url2;
+    const nombre = slot === 1 ? c.nombre_archivo : c.nombre_archivo2;
+    const label  = slot === 1 ? 'PDF principal' : 'PDF adicional';
+    if (url) {
+      return `<a class="btn-sm conv-pdf-dl" href="${esc(url)}" target="_blank" rel="noopener">${SVG_DOWNLOAD} Descargar ${label}</a>`;
+    }
+    return `<label class="btn-sm conv-subir-label">
+      ${SVG_UPLOAD} Subir ${label}
+      <input type="file" accept=".pdf" class="conv-subir-input" data-conv="${c.id}" data-slot="${slot}" style="display:none">
+    </label>`;
+  }
+
+  async function subirPdf(convId, slot, file) {
+    const statusEl = document.getElementById(`conv-upload-status-${convId}`);
+    if (statusEl) { statusEl.textContent = 'Subiendo PDF…'; statusEl.style.display = 'block'; statusEl.className = 'conv-upload-status'; }
+    const fd = new FormData();
+    fd.append('archivo', file);
+    fd.append('slot', slot);
+    try {
+      const r = await fetch(`/api/convenios/${convId}/pdf`, {
+        method: 'POST', headers: { 'X-CSRFToken': csrf() }, body: fd,
+      }).then(r => r.json());
+      if (!r.ok) throw new Error(r.error || 'Error al subir');
+      await verDetalle(convId);
+    } catch (err) {
+      if (statusEl) { statusEl.textContent = 'Error: ' + err.message; statusEl.className = 'conv-upload-status error'; }
+    }
+  }
+
   function iconoPdf(driveUrl, nombre) {
     if (!driveUrl) return '<span class="conv-sin-pdf">Sin PDF</span>';
     return `<a class="conv-pdf-link" href="${esc(driveUrl)}" target="_blank" rel="noopener" title="${esc(nombre || 'Ver PDF')}">
@@ -159,15 +192,10 @@
         ${c.beneficios_ingreso ? `<div class="conv-det-campo"><strong>Beneficios de ingreso:</strong><p>${esc(c.beneficios_ingreso)}</p></div>` : ''}
         ${c.fecha_adendas ? `<div class="conv-det-campo"><strong>Fecha de adendas:</strong><p>${esc(c.fecha_adendas)}</p></div>` : ''}
         ${c.observaciones ? `<div class="conv-det-campo"><strong>Observaciones:</strong><p>${esc(c.observaciones)}</p></div>` : ''}
-        <div class="conv-det-pdfs">
-          ${c.drive_url ? `<a class="btn-sm conv-pdf-dl" href="${esc(c.drive_url)}" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-            </svg> Descargar PDF principal</a>` : '<span class="conv-sin-pdf">Sin PDF</span>'}
-          ${c.drive_url2 ? `<a class="btn-sm conv-pdf-dl" href="${esc(c.drive_url2)}" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-            </svg> Descargar PDF adicional</a>` : ''}
+        <div class="conv-det-pdfs" id="conv-det-pdfs-${c.id}">
+          ${pdfSlotHtml(c, 1)}
+          ${c.drive_url ? pdfSlotHtml(c, 2) : ''}
+          <div class="conv-upload-status" id="conv-upload-status-${c.id}" style="display:none"></div>
         </div>`;
     } catch (e) {
       $('conv-modal-body').innerHTML = `<p class="empty-msg">Error: ${esc(e.message)}</p>`;
@@ -284,6 +312,12 @@
     $('conv-tabla')?.addEventListener('click', e => {
       const btn = e.target.closest('.conv-ver-btn');
       if (btn) verDetalle(+btn.dataset.id);
+    });
+
+    // Upload PDF desde modal de detalle
+    $('conv-modal-body')?.addEventListener('change', e => {
+      const inp = e.target.closest('.conv-subir-input');
+      if (inp && inp.files[0]) subirPdf(+inp.dataset.conv, inp.dataset.slot, inp.files[0]);
     });
 
     // Cerrar modal detalle
