@@ -211,12 +211,33 @@
   function abrirFormNuevo() {
     $('conv-form-modal')?.classList.add('conv-modal--open');
     document.body.classList.add('modal-open');
+    const campoRegion = $('cf-region');
+    if (campoRegion) {
+      const regionPerfil = window.PERFIL?.region || '';
+      if (regionPerfil) {
+        campoRegion.value    = regionPerfil;
+        campoRegion.readOnly = true;
+        campoRegion.style.background = 'var(--surface-alt, #f5f5f5)';
+        campoRegion.title = 'Tu región asignada';
+      } else {
+        campoRegion.readOnly = false;
+        campoRegion.style.background = '';
+        campoRegion.title = '';
+      }
+    }
   }
 
   function cerrarFormNuevo() {
     $('conv-form-modal')?.classList.remove('conv-modal--open');
     document.body.classList.remove('modal-open');
     $('conv-form')?.reset();
+    // Restaurar región fija tras reset
+    const campoRegion = $('cf-region');
+    if (campoRegion && window.PERFIL?.region) {
+      campoRegion.value    = window.PERFIL.region;
+      campoRegion.readOnly = true;
+      campoRegion.style.background = 'var(--surface-alt, #f5f5f5)';
+    }
     $('conv-form-error').textContent = '';
     $('conv-form-pdf-status').textContent = '';
   }
