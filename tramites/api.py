@@ -1680,7 +1680,7 @@ def convenio_detalle(request, conv_id: int):
 
 
 @api.post('/convenios')
-@requiere(puede='agregar')
+@requiere(accion='agregar')
 def convenio_crear(request):
     """Crea un nuevo convenio y sube su PDF a Google Drive."""
     from .models import Convenio
@@ -1730,7 +1730,7 @@ def convenio_crear(request):
 
 
 @api.post('/convenios/{conv_id}/pdf')
-@requiere(puede='agregar')
+@requiere(accion='agregar')
 def convenio_subir_pdf(request, conv_id: int):
     """Sube un PDF y lo vincula al convenio en Google Drive."""
     from .models import Convenio
