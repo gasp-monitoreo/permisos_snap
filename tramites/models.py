@@ -348,6 +348,112 @@ ACCIONES_REVERSIBLES = {
 }
 
 
+# ─── Convenios institucionales ───────────────────────────────────────────────
+TIPOS_CONVENIO = [
+    ('colaboracion',    'Convenio de Colaboración'),
+    ('uso_terreno',     'Convenio de Uso de Terreno'),
+    ('investigacion',   'Convenio de Investigación'),
+    ('educacion',       'Convenio de Educación y Extensión'),
+    ('prestacion',      'Convenio de Prestación de Servicios'),
+    ('donacion',        'Donación / Transferencia de Bienes'),
+    ('otro',            'Otro'),
+]
+
+ESTADOS_CONVENIO = [
+    ('vigente',   'Vigente'),
+    ('vencido',   'Vencido'),
+    ('por_vencer','Por vencer'),
+    ('terminado', 'Terminado'),
+    ('otro',      'Otro'),
+]
+
+TIPOS_ORG_CONVENIO = [
+    ('empresa',         'Empresa'),
+    ('universidad',     'Universidad'),
+    ('municipalidad',   'Municipalidad'),
+    ('junta_vecinos',   'Junta de Vecinos'),
+    ('comunidad',       'Comunidad o Asociación'),
+    ('corporacion',     'Corporación'),
+    ('ong',             'ONG'),
+    ('fundacion',       'Fundación'),
+    ('servicio_publico','Servicio Público'),
+    ('otro',            'Otro'),
+]
+
+
+class Convenio(models.Model):
+    """Convenio o acuerdo institucional de CONAF con terceros.
+    El PDF se almacena en Google Drive; este registro indexa sus metadatos."""
+    region              = models.CharField(max_length=200, blank=True)
+    rut                 = models.CharField(max_length=30, blank=True)
+    razon_social        = models.CharField(max_length=500, blank=True)
+    tipo_convenio       = models.CharField(max_length=20, choices=TIPOS_CONVENIO, default='otro')
+    nombre              = models.TextField()
+    objetivo            = models.TextField(blank=True)
+    fecha_firma         = models.DateField(null=True, blank=True)
+    anio                = models.IntegerField(null=True, blank=True)
+    duracion            = models.CharField(max_length=200, blank=True)
+    termino             = models.CharField(max_length=200, blank=True)
+    renovacion_automatica = models.CharField(max_length=100, blank=True)
+    fecha_adendas       = models.TextField(blank=True)
+    tipo_organizacion   = models.CharField(max_length=20, choices=TIPOS_ORG_CONVENIO, default='otro')
+    estado              = models.CharField(max_length=20, choices=ESTADOS_CONVENIO, default='vigente')
+    transf_bienes       = models.TextField(blank=True)
+    transf_presup       = models.TextField(blank=True)
+    beneficios_ingreso  = models.TextField(blank=True)
+    responsable_conaf   = models.CharField(max_length=255, blank=True)
+    observaciones       = models.TextField(blank=True)
+    # Primer PDF (principal)
+    nombre_archivo      = models.CharField(max_length=500, blank=True)
+    drive_id            = models.CharField(max_length=200, blank=True)
+    drive_url           = models.CharField(max_length=500, blank=True)
+    # Segundo PDF (adenda u otro)
+    nombre_archivo2     = models.CharField(max_length=500, blank=True)
+    drive_id2           = models.CharField(max_length=200, blank=True)
+    drive_url2          = models.CharField(max_length=500, blank=True)
+    subido_por          = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    creado_en           = models.DateTimeField(auto_now_add=True)
+    actualizado_en      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-anio', 'razon_social']
+
+    def como_dict(self):
+        return {
+            'id':                   self.id,
+            'region':               self.region,
+            'rut':                  self.rut,
+            'razon_social':         self.razon_social,
+            'tipo_convenio':        self.tipo_convenio,
+            'tipo_convenio_nombre': dict(TIPOS_CONVENIO).get(self.tipo_convenio, self.tipo_convenio),
+            'nombre':               self.nombre,
+            'objetivo':             self.objetivo,
+            'fecha_firma':          self.fecha_firma.isoformat() if self.fecha_firma else None,
+            'anio':                 self.anio,
+            'duracion':             self.duracion,
+            'termino':              self.termino,
+            'renovacion_automatica':self.renovacion_automatica,
+            'fecha_adendas':        self.fecha_adendas,
+            'tipo_organizacion':    self.tipo_organizacion,
+            'tipo_organizacion_nombre': dict(TIPOS_ORG_CONVENIO).get(self.tipo_organizacion, self.tipo_organizacion),
+            'estado':               self.estado,
+            'estado_nombre':        dict(ESTADOS_CONVENIO).get(self.estado, self.estado),
+            'transf_bienes':        self.transf_bienes,
+            'transf_presup':        self.transf_presup,
+            'beneficios_ingreso':   self.beneficios_ingreso,
+            'responsable_conaf':    self.responsable_conaf,
+            'observaciones':        self.observaciones,
+            'nombre_archivo':       self.nombre_archivo,
+            'drive_id':             self.drive_id,
+            'drive_url':            self.drive_url,
+            'nombre_archivo2':      self.nombre_archivo2,
+            'drive_id2':            self.drive_id2,
+            'drive_url2':           self.drive_url2,
+            'subido_por':           (self.subido_por.get_full_name() or self.subido_por.username) if self.subido_por else '',
+            'creado_en':            self.creado_en.isoformat() if self.creado_en else None,
+        }
+
+
 class AuditLog(models.Model):
     """Registro inmutable de acciones relevantes realizadas por usuarios.
     Solo el superusuario puede verlo. Permite revertir acciones específicas."""

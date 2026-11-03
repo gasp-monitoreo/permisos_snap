@@ -75,6 +75,10 @@
       <span>Exportar</span>
     </button>
     {% endif %}
+    <button class="tab-btn" data-tab="convenios" data-title="Convenios">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      <span>Convenios</span>
+    </button>
     {% if perfil.superusuario %}
     <button class="tab-btn" data-tab="usuarios" data-title="Usuarios">
       <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg>
@@ -519,7 +523,163 @@
   </section>
   {% endif %}
 
+  <!-- ══════════════════ CONVENIOS INSTITUCIONALES ══════════════════ -->
+  <section id="tab-convenios" class="tab-content">
+    <div class="hero hero--short" data-hero="5">
+      <div class="hero-body">
+        <span class="hero-eyebrow">Acuerdos institucionales</span>
+        <h2 class="hero-title">Convenios</h2>
+        <p class="hero-sub">Registro de convenios, acuerdos y contratos de CONAF con terceros. Busque por región, año, contraparte o palabras clave.</p>
+      </div>
+      <div class="hero-credit"></div>
+    </div>
+
+    <div class="usr-barra">
+      <input id="conv-busqueda" type="search" placeholder="Buscar por nombre, contraparte, objetivo…" class="usr-input" style="flex:1;min-width:180px;max-width:340px">
+      <select id="conv-filtro-region"><option value="">Todas las regiones</option></select>
+      <select id="conv-filtro-anio"><option value="">Todos los años</option></select>
+      <select id="conv-filtro-estado">
+        <option value="">Todos los estados</option>
+        <option value="vigente">Vigente</option>
+        <option value="por_vencer">Por vencer</option>
+        <option value="vencido">Vencido</option>
+        <option value="terminado">Terminado</option>
+      </select>
+      <select id="conv-filtro-tipo-org">
+        <option value="">Todos los tipos de organización</option>
+        <option value="empresa">Empresa</option>
+        <option value="universidad">Universidad</option>
+        <option value="municipalidad">Municipalidad</option>
+        <option value="junta_vecinos">Junta de Vecinos</option>
+        <option value="comunidad">Comunidad o Asociación</option>
+        <option value="corporacion">Corporación</option>
+        <option value="ong">ONG</option>
+        <option value="fundacion">Fundación</option>
+        <option value="servicio_publico">Servicio Público</option>
+      </select>
+      <span class="usr-espacio"></span>
+      <span id="conv-conteo" class="hist-pag-info"></span>
+      {% if perfil.puede_agregar or perfil.superusuario %}
+      <button id="conv-nuevo-btn" class="btn-sm btn-primary">+ Nuevo convenio</button>
+      {% endif %}
+    </div>
+
+    <div class="section-card">
+      <div class="table-wrapper">
+        <table class="hist-table">
+          <thead>
+            <tr>
+              <th>Año</th>
+              <th>Región</th>
+              <th>Nombre del convenio</th>
+              <th>Contraparte</th>
+              <th>Tipo</th>
+              <th>Estado</th>
+              <th>PDF</th>
+              <th>PDF 2</th>
+            </tr>
+          </thead>
+          <tbody id="conv-tabla">
+            <tr><td colspan="8" class="empty-msg">Haga clic en «Convenios» para cargar.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="hist-pag">
+      <button id="conv-pag-ant" class="btn-sm" disabled>‹ Anterior</button>
+      <span id="conv-pag-info" class="hist-pag-info"></span>
+      <button id="conv-pag-sig" class="btn-sm" disabled>Siguiente ›</button>
+    </div>
+  </section>
+
 </main>
+
+<!-- ══════════════════ MODAL: DETALLE CONVENIO ══════════════════ -->
+<div id="conv-modal" class="conv-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="conv-modal-titulo">
+  <div class="conv-modal-box">
+    <div class="modal-header">
+      <h2 id="conv-modal-titulo" class="modal-title">Detalle del convenio</h2>
+      <button id="conv-modal-cerrar" class="modal-close" aria-label="Cerrar">✕</button>
+    </div>
+    <div id="conv-modal-body" class="conv-modal-body"></div>
+  </div>
+</div>
+
+{% if perfil.puede_agregar or perfil.superusuario %}
+<!-- ══════════════════ MODAL: NUEVO CONVENIO ══════════════════ -->
+<div id="conv-form-modal" class="conv-modal-overlay" role="dialog" aria-modal="true">
+  <div class="conv-modal-box">
+    <div class="modal-header">
+      <h2 class="modal-title">Nuevo convenio</h2>
+      <button id="conv-form-cancelar-x" class="modal-close" aria-label="Cerrar" onclick="document.getElementById('conv-form-cancelar').click()">✕</button>
+    </div>
+    <div class="conv-modal-body">
+      <form id="conv-form" class="conv-form">
+        <div class="conv-form-grid">
+          <label>Nombre del convenio *<input id="cf-nombre" type="text" required placeholder="Nombre completo del convenio"></label>
+          <label>Contraparte (razón social)<input id="cf-razon" type="text" placeholder="Nombre de la organización"></label>
+          <label>RUT<input id="cf-rut" type="text" placeholder="12.345.678-9"></label>
+          <label>Región<input id="cf-region" type="text" placeholder="Ej: Región de Los Lagos"></label>
+          <label>Tipo de convenio
+            <select id="cf-tipo-conv">
+              <option value="otro">Otro</option>
+              <option value="colaboracion">Colaboración</option>
+              <option value="uso_terreno">Uso de terreno</option>
+              <option value="investigacion">Investigación</option>
+              <option value="educacion">Educación y extensión</option>
+              <option value="prestacion">Prestación de servicios</option>
+              <option value="donacion">Donación / Transferencia</option>
+            </select>
+          </label>
+          <label>Tipo de organización
+            <select id="cf-tipo-org">
+              <option value="otro">Otro</option>
+              <option value="empresa">Empresa</option>
+              <option value="universidad">Universidad</option>
+              <option value="municipalidad">Municipalidad</option>
+              <option value="junta_vecinos">Junta de Vecinos</option>
+              <option value="comunidad">Comunidad o Asociación</option>
+              <option value="corporacion">Corporación</option>
+              <option value="ong">ONG</option>
+              <option value="fundacion">Fundación</option>
+              <option value="servicio_publico">Servicio Público</option>
+            </select>
+          </label>
+          <label>Estado
+            <select id="cf-estado">
+              <option value="vigente">Vigente</option>
+              <option value="por_vencer">Por vencer</option>
+              <option value="vencido">Vencido</option>
+              <option value="terminado">Terminado</option>
+            </select>
+          </label>
+          <label>Año<input id="cf-anio" type="number" min="1980" max="2050" placeholder="2025"></label>
+          <label>Fecha de firma<input id="cf-fecha" type="date"></label>
+          <label>Duración<input id="cf-duracion" type="text" placeholder="Ej: 2 años"></label>
+          <label>Término<input id="cf-termino" type="text" placeholder="Fecha o condición de término"></label>
+          <label>Responsable CONAF<input id="cf-responsable" type="text" placeholder="Nombre del funcionario responsable"></label>
+        </div>
+        <label class="conv-form-full">Objetivo
+          <textarea id="cf-objetivo" rows="3" placeholder="Objetivo del convenio"></textarea>
+        </label>
+        <label class="conv-form-full">Observaciones
+          <textarea id="cf-obs" rows="2" placeholder="Notas adicionales"></textarea>
+        </label>
+        <label class="conv-form-full">PDF del convenio (opcional)
+          <input id="cf-pdf" type="file" accept=".pdf">
+          <span id="conv-form-pdf-status" class="conv-pdf-status"></span>
+        </label>
+        <p id="conv-form-error" class="conv-form-error"></p>
+        <div class="conv-form-actions">
+          <button type="button" id="conv-form-cancelar" class="btn-sm">Cancelar</button>
+          <button type="submit" id="conv-form-guardar" class="btn-sm btn-primary">Guardar convenio</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% if perfil.superusuario %}
 <!-- ══════════════════════ MODAL: USUARIO ══════════════════════ -->
@@ -730,6 +890,7 @@
 {% if perfil.superusuario %}<script src="/static/js/usuarios.js"></script>{% endif %}
 {% if perfil.superusuario %}<script src="/static/js/historial.js"></script>{% endif %}
 {% if perfil.superusuario %}<script src="/static/js/accesos.js"></script>{% endif %}
+<script src="/static/js/convenios.js"></script>
 <script src="/static/js/recorrido.js"></script>
 </body>
 </html>

@@ -1615,3 +1615,181 @@ def auditoria_revertir(request, audit_id: int):
     if not ok:
         return api.create_response(request, {'ok': False, 'error': msg}, status=400)
     return {'ok': True, 'mensaje': msg}
+
+
+# ─── Convenios institucionales ────────────────────────────────────────────────
+CONVENIOS_DRIVE_FOLDER = '1rTjd2Ejtuzmva0OCDp_z5albHWeG0IVN'
+
+
+@api.get('/convenios')
+def convenios_listar(request):
+    from .models import Convenio
+    qs = Convenio.objects.all()
+    # Filtros
+    region = request.GET.get('region', '').strip()
+    anio   = request.GET.get('anio', '').strip()
+    estado = request.GET.get('estado', '').strip()
+    tipo_org = request.GET.get('tipo_org', '').strip()
+    q      = request.GET.get('q', '').strip()
+    if region:
+        qs = qs.filter(region__icontains=region)
+    if anio:
+        try:
+            qs = qs.filter(anio=int(anio))
+        except ValueError:
+            pass
+    if estado:
+        qs = qs.filter(estado=estado)
+    if tipo_org:
+        qs = qs.filter(tipo_organizacion=tipo_org)
+    if q:
+        from django.db.models import Q
+        qs = qs.filter(
+            Q(nombre__icontains=q) |
+            Q(razon_social__icontains=q) |
+            Q(objetivo__icontains=q) |
+            Q(observaciones__icontains=q) |
+            Q(responsable_conaf__icontains=q)
+        )
+    total = qs.count()
+    page  = max(1, int(request.GET.get('page', 1)))
+    size  = 50
+    offset = (page - 1) * size
+    items = [c.como_dict() for c in qs[offset:offset + size]]
+    return {'ok': True, 'total': total, 'page': page, 'pages': max(1, (total + size - 1) // size), 'data': items}
+
+
+@api.get('/convenios/filtros')
+def convenios_filtros(request):
+    """Valores únicos para poblar los selectores de filtro."""
+    from .models import Convenio
+    from django.db.models import Count
+    regiones = list(Convenio.objects.exclude(region='').values_list('region', flat=True).distinct().order_by('region'))
+    anios    = list(Convenio.objects.exclude(anio=None).values_list('anio', flat=True).distinct().order_by('-anio'))
+    return {'ok': True, 'regiones': regiones, 'anios': anios}
+
+
+@api.get('/convenios/{conv_id}')
+def convenio_detalle(request, conv_id: int):
+    from .models import Convenio
+    try:
+        c = Convenio.objects.get(pk=conv_id)
+    except Convenio.DoesNotExist:
+        return api.create_response(request, {'ok': False, 'error': 'No encontrado'}, status=404)
+    return {'ok': True, 'data': c.como_dict()}
+
+
+@api.post('/convenios')
+@requiere(puede='agregar')
+def convenio_crear(request):
+    """Crea un nuevo convenio y sube su PDF a Google Drive."""
+    from .models import Convenio
+    from .drive_utils import get_drive_service
+    import json as _j
+
+    body = _j.loads(request.body or b'{}')
+
+    # Campos obligatorios
+    nombre = (body.get('nombre') or '').strip()
+    if not nombre:
+        return api.create_response(request, {'ok': False, 'error': 'El campo nombre es obligatorio'}, status=400)
+
+    try:
+        anio_val = int(body['anio']) if body.get('anio') else None
+    except (ValueError, TypeError):
+        anio_val = None
+
+    from datetime import date as _date
+    fecha_firma = None
+    if body.get('fecha_firma'):
+        try:
+            from datetime import datetime as _dt
+            fecha_firma = _dt.strptime(body['fecha_firma'][:10], '%Y-%m-%d').date()
+        except Exception:
+            pass
+
+    conv = Convenio.objects.create(
+        region              = (body.get('region') or '').strip(),
+        rut                 = (body.get('rut') or '').strip(),
+        razon_social        = (body.get('razon_social') or '').strip(),
+        tipo_convenio       = body.get('tipo_convenio') or 'otro',
+        nombre              = nombre,
+        objetivo            = (body.get('objetivo') or '').strip(),
+        fecha_firma         = fecha_firma,
+        anio                = anio_val,
+        duracion            = (body.get('duracion') or '').strip(),
+        termino             = (body.get('termino') or '').strip(),
+        renovacion_automatica = (body.get('renovacion_automatica') or '').strip(),
+        tipo_organizacion   = body.get('tipo_organizacion') or 'otro',
+        estado              = body.get('estado') or 'vigente',
+        responsable_conaf   = (body.get('responsable_conaf') or '').strip(),
+        observaciones       = (body.get('observaciones') or '').strip(),
+        subido_por          = request.user,
+    )
+    return {'ok': True, 'data': conv.como_dict()}
+
+
+@api.post('/convenios/{conv_id}/pdf')
+@requiere(puede='agregar')
+def convenio_subir_pdf(request, conv_id: int):
+    """Sube un PDF y lo vincula al convenio en Google Drive."""
+    from .models import Convenio
+    from .drive_utils import get_drive_service
+
+    try:
+        conv = Convenio.objects.get(pk=conv_id)
+    except Convenio.DoesNotExist:
+        return api.create_response(request, {'ok': False, 'error': 'No encontrado'}, status=404)
+
+    archivo = request.FILES.get('archivo')
+    slot    = request.POST.get('slot', '1')  # '1' o '2'
+    if not archivo:
+        return api.create_response(request, {'ok': False, 'error': 'Falta el archivo'}, status=400)
+
+    ext = os.path.splitext(archivo.name)[1].lower()
+    if ext != '.pdf':
+        return api.create_response(request, {'ok': False, 'error': 'Solo se admiten archivos PDF'}, status=400)
+
+    svc, err = get_drive_service()
+    if err:
+        return api.create_response(request, {'ok': False, 'error': f'Drive no disponible: {err}'}, status=503)
+
+    try:
+        from googleapiclient.http import MediaIoBaseUpload
+        media = MediaIoBaseUpload(archivo, mimetype='application/pdf', resumable=True)
+        meta  = {'name': archivo.name, 'parents': [CONVENIOS_DRIVE_FOLDER]}
+        f = svc.files().create(body=meta, media_body=media, fields='id, webViewLink').execute()
+        # Hacer el archivo accesible para quien tenga el link
+        svc.permissions().create(
+            fileId=f['id'],
+            body={'type': 'anyone', 'role': 'reader'},
+        ).execute()
+    except Exception as e:
+        return api.create_response(request, {'ok': False, 'error': f'Error subiendo a Drive: {e}'}, status=500)
+
+    drive_id  = f['id']
+    drive_url = f.get('webViewLink') or f'https://drive.google.com/file/d/{drive_id}/view'
+
+    if slot == '2':
+        conv.nombre_archivo2 = archivo.name
+        conv.drive_id2       = drive_id
+        conv.drive_url2      = drive_url
+    else:
+        conv.nombre_archivo = archivo.name
+        conv.drive_id       = drive_id
+        conv.drive_url      = drive_url
+    conv.save()
+
+    return {'ok': True, 'drive_id': drive_id, 'drive_url': drive_url, 'data': conv.como_dict()}
+
+
+@api.delete('/convenios/{conv_id}')
+@requiere(superusuario=True)
+def convenio_eliminar(request, conv_id: int):
+    from .models import Convenio
+    try:
+        conv = Convenio.objects.get(pk=conv_id)
+    except Convenio.DoesNotExist:
+        return api.create_response(request, {'ok': False, 'error': 'No encontrado'}, status=404)
+    conv.delete()
+    return {'ok': True}
