@@ -385,7 +385,7 @@ class Convenio(models.Model):
     """Convenio o acuerdo institucional de CONAF con terceros.
     El PDF se almacena en Google Drive; este registro indexa sus metadatos."""
     region              = models.CharField(max_length=200, blank=True)
-    rut                 = models.CharField(max_length=30, blank=True)
+    rut                 = models.CharField(max_length=200, blank=True)
     razon_social        = models.CharField(max_length=500, blank=True)
     tipo_convenio       = models.CharField(max_length=20, choices=TIPOS_CONVENIO, default='otro')
     nombre              = models.TextField()
