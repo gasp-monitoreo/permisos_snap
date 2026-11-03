@@ -1663,8 +1663,15 @@ def convenios_listar(request):
 def convenios_filtros(request):
     """Valores únicos para poblar los selectores de filtro."""
     from .models import Convenio
-    from django.db.models import Count
-    regiones = list(Convenio.objects.exclude(region='').values_list('region', flat=True).distinct().order_by('region'))
+    _ORDEN_REGIONES = [
+        'Oficina Central',
+        'Arica Parinacota', 'Tarapacá', 'Antofagasta', 'Atacama', 'Coquimbo',
+        'Valparaíso', 'Metropolitana', "O'Higgins", 'Maule', 'Ñuble',
+        'Biobío', 'Araucanía', 'Los Ríos', 'Los Lagos', 'Aysén', 'Magallanes',
+    ]
+    _idx = {r: i for i, r in enumerate(_ORDEN_REGIONES)}
+    regiones_db = list(Convenio.objects.exclude(region='').values_list('region', flat=True).distinct())
+    regiones = sorted(regiones_db, key=lambda r: (_idx.get(r, len(_ORDEN_REGIONES)), r))
     anios    = list(Convenio.objects.exclude(anio=None).values_list('anio', flat=True).distinct().order_by('-anio'))
     return {'ok': True, 'regiones': regiones, 'anios': anios}
 
