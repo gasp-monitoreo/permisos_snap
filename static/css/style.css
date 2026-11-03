@@ -2372,9 +2372,9 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
 .acc-revocar:disabled { opacity: .5; cursor: wait; }
 
 /* ── Convenios institucionales ── */
-.conv-razon { min-width: 160px; font-weight: 600; }
-.conv-nombre { min-width: 120px; max-width: 260px; }
-.conv-nombre button { white-space: normal; text-align: left; }
+.conv-razon { min-width: 180px; max-width: 280px; font-weight: 600; white-space: normal; word-break: break-word; overflow-wrap: break-word; }
+.conv-nombre { min-width: 120px; max-width: 220px; }
+.conv-nombre button { white-space: normal; text-align: left; word-break: break-word; }
 .conv-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
 .conv-pill--ok   { background: #D1FAE5; color: #065F46; }
 .conv-pill--ven  { background: #FEF3C7; color: #92400E; }
