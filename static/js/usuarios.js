@@ -56,7 +56,7 @@
       <tbody>${lista.map(u => `<tr data-id="${u.id}">
         <td><strong>${_esc(u.nombre || '—')}</strong><br><small>${_esc(u.email)}</small></td>
         <td>${u.superusuario ? 'Superusuario' : _esc(TIPOS[u.tipo] || u.tipo)}</td>
-        <td>${_esc(u.region || 'Nacional')}${u.solo_su_region ? ' <span class="usr-candado" title="Solo ve su región">🔒</span>' : ''}</td>
+        <td>${_esc(u.region || 'Nacional')}${u.solo_su_region ? ' <span class="usr-candado" title="Solo gestiona su región (puede ver todo)">🔒</span>' : ''}</td>
         <td class="usr-secs">${u.secciones.map(s => `<span class="usr-chip">${_esc((secciones[s] || s).split(' (')[0])}</span>`).join('')}</td>
         <td>${permisos(u)}</td>
         <td>${estado(u)}</td>

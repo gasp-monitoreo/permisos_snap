@@ -47,8 +47,7 @@ def _region_forzada(request):
 def _filtrar_region(request, lista):
     from .ajustes import aplicar
     from .presion import con_areas_por_region
-    reg = _region_forzada(request)
-    return con_areas_por_region(aplicar(lista if not reg else [t for t in lista if reg in (t.get('regiones_list') or [])]))
+    return con_areas_por_region(aplicar(lista))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -172,8 +171,6 @@ def get_tramite(request, tramite_id: int):
         t    = data.get('tramite', data)
         norm = normalize_tramite(t)
         visibles = _filtrar_region(request, [norm])
-        if not visibles:
-            return api.create_response(request, {'ok': False, 'error': 'Trámite fuera de su región.'}, status=403)
         return {'ok': True, 'data': privacidad.tramites(request, visibles)[0]}
     except _requests.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
@@ -528,9 +525,6 @@ def presion_areas(request, region: str, tipo: Optional[str] = None):
     """Permisos activos (en ejecución, programados, en evaluación) por área protegida de una región.
     tipo: 'inv' (investigación) o 'film' (filmación y fotografía); sin tipo, ambos."""
     from .presion import presion_region
-    forzada = _region_forzada(request)
-    if forzada and region != forzada:
-        return api.create_response(request, {'ok': False, 'error': 'Solo puede consultar su región.'}, status=403)
     if tipo not in (None, 'inv', 'film'):
         return api.create_response(request, {'ok': False, 'error': 'tipo debe ser inv o film'}, status=400)
     try:
@@ -1195,13 +1189,8 @@ def accesos_revocar(request, acceso_id: int):
 
 
 def _registros_visibles(request, tramite_id):
-    """Registros del trámite si el perfil puede ver su región (None si no)."""
-    from .models import AccesoInvestigador, RegistroGeografico
-    reg = _region_forzada(request)
-    if reg:
-        acc = AccesoInvestigador.objects.filter(tramite_id=tramite_id).first()
-        if not acc or reg not in (acc.regiones or []):
-            return None
+    """Registros geográficos del trámite."""
+    from .models import RegistroGeografico
     return RegistroGeografico.objects.filter(tramite_id=tramite_id)
 
 
@@ -1209,8 +1198,6 @@ def _registros_visibles(request, tramite_id):
 def registro_geografico(request, tramite_id: int):
     from .models import AccesoInvestigador
     regs = _registros_visibles(request, tramite_id)
-    if regs is None:
-        return api.create_response(request, {'ok': False, 'error': 'Trámite fuera de su región.'}, status=403)
     acc = AccesoInvestigador.objects.filter(tramite_id=tramite_id).first()
     feats = [r.como_feature() for r in regs]
     if not privacidad.ve_sensible(request.user):
@@ -1223,8 +1210,6 @@ def registro_geografico(request, tramite_id: int):
 def registro_geografico_descarga(request, tramite_id: int):
     from .portal import geojson_descarga
     regs = _registros_visibles(request, tramite_id)
-    if regs is None:
-        return api.create_response(request, {'ok': False, 'error': 'Trámite fuera de su región.'}, status=403)
     return geojson_descarga(tramite_id, regs, proteger=not privacidad.ve_sensible(request.user))
 
 
@@ -1267,9 +1252,6 @@ def territorio(request, tipo: Optional[str] = None, region: Optional[str] = None
     from .presion import presion_nacional, presion_region
     if tipo not in (None, 'inv', 'film'):
         return api.create_response(request, {'ok': False, 'error': 'tipo debe ser inv o film'}, status=400)
-    forzada = _region_forzada(request)
-    if forzada and region != forzada:
-        return api.create_response(request, {'ok': False, 'error': 'Solo puede consultar su región.'}, status=403)
     try:
         if not region:
             clave = f'territorio:nac:v3:{tipo}:{datetime.now():%Y%m%d%H}'
@@ -1354,9 +1336,8 @@ def buscar_indice(request):
     import gzip
     from django.core.cache import cache
     from .models import RegistroGeografico
-    reg = _region_forzada(request) or 'todas'
     protegido = not privacidad.ve_sensible(request.user)
-    clave = f'buscar:indice:v2:{reg}:{"protegido" if protegido else "completo"}'
+    clave = f'buscar:indice:v2:todas:{"protegido" if protegido else "completo"}'
     cuerpo = cache.get(clave)
     if cuerpo is None:
         datos, pendientes = _anios_busqueda()

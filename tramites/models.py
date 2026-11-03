@@ -96,7 +96,7 @@ class PerfilUsuario(models.Model):
     user         = models.OneToOneField('auth.User', on_delete=models.CASCADE, related_name='perfil')
     tipo         = models.CharField(max_length=10, choices=TIPOS_PERFIL, default='nacional')
     region       = models.CharField(max_length=50, blank=True)      # nombre en REGIONES_CHILE; vacío = nacional
-    solo_su_region = models.BooleanField(default=False)              # restringe datos a su región
+    solo_su_region = models.BooleanField(default=False)              # restringe edición a su región (puede ver todo)
     areas        = models.JSONField(default=list, blank=True)         # áreas protegidas a cargo (vacío = todas las de su ámbito)
     secciones    = models.JSONField(default=list)                     # claves de SECCIONES
     puede_agregar = models.BooleanField(default=False)
@@ -118,7 +118,7 @@ class PerfilUsuario(models.Model):
         return accion == 'ver' or bool(getattr(self, f'puede_{accion}', False))
 
     def region_forzada(self):
-        """Región a la que se restringen los datos, o None si ve todo el país."""
+        """Región restringida para operaciones de escritura, o None si puede gestionar todo el país."""
         return self.region if (self.solo_su_region and self.region and not self.user.is_superuser) else None
 
     def como_dict(self):
