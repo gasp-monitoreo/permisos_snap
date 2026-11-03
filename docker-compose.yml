@@ -20,8 +20,8 @@ services:
       - ./gmail_auth:/app/gmail_auth
       - ./fotos_portada:/app/fotos_portada
       - cache_adjuntos:/app/cache_adjuntos
-    expose:
-      - "8000"
+    ports:
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/salud"]
       interval: 30s
@@ -29,20 +29,5 @@ services:
       retries: 3
       start_period: 30s
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - app
-
 volumes:
   cache_adjuntos:
-  caddy_data:
-  caddy_config:
