@@ -1,26 +1,13 @@
 services:
 
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB:       cerofilas
-      POSTGRES_USER:     cerofilas
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cerofilas_secret}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cerofilas"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   app:
     build: .
     image: permisos-snap:latest
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL:        postgresql://cerofilas:${POSTGRES_PASSWORD:-cerofilas_secret}@db:5432/cerofilas
+      DATABASE_URL:        ${DATABASE_URL}
       SECRET_KEY:          ${SECRET_KEY:-django-insecure-change-me}
       CEROFILAS_TOKEN:     ${CEROFILAS_TOKEN}
       CEROFILAS_API_BASE:  ${CEROFILAS_API_BASE:-https://conaf.cerofilas.gob.cl/backend/api}
@@ -32,10 +19,7 @@ services:
       - ./Investigaciones:/app/Investigaciones
       - ./gmail_auth:/app/gmail_auth
       - ./fotos_portada:/app/fotos_portada
-      - cache_adjuntos:/app/cache_adjuntos   # adjuntos traídos de Cero Filas (temporal, 7 días)
-    depends_on:
-      db:
-        condition: service_healthy
+      - cache_adjuntos:/app/cache_adjuntos
     expose:
       - "8000"
     healthcheck:
@@ -59,7 +43,6 @@ services:
       - app
 
 volumes:
-  postgres_data:
   cache_adjuntos:
   caddy_data:
   caddy_config:
