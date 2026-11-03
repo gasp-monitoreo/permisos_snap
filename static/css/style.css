@@ -2393,7 +2393,6 @@ button.res-cifra:disabled { cursor: default; opacity: .5; }
 .conv-nombre .conv-ver-btn:hover { color: var(--em-900); }
 .conv-anio { white-space: nowrap; font-weight: 700; color: var(--em-700); }
 .conv-region { font-size: 12px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv-razon { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Modal detalle convenio */
 .conv-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200;
