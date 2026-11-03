@@ -1670,7 +1670,7 @@ def convenios_filtros(request):
         'Biobío', 'Araucanía', 'Los Ríos', 'Los Lagos', 'Aysén', 'Magallanes',
     ]
     _idx = {r: i for i, r in enumerate(_ORDEN_REGIONES)}
-    regiones_db = list(Convenio.objects.exclude(region='').values_list('region', flat=True).distinct())
+    regiones_db = list(Convenio.objects.exclude(region='').values_list('region', flat=True).order_by().distinct())
     regiones = sorted(regiones_db, key=lambda r: (_idx.get(r, len(_ORDEN_REGIONES)), r))
     anios    = list(Convenio.objects.exclude(anio=None).values_list('anio', flat=True).distinct().order_by('-anio'))
     return {'ok': True, 'regiones': regiones, 'anios': anios}
