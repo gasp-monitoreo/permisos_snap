@@ -105,10 +105,10 @@
       <tr class="hist-fila conv-fila" data-id="${c.id}">
         <td class="conv-anio">${c.anio || '–'}</td>
         <td class="conv-region">${esc(c.region)}</td>
+        <td class="conv-razon">${esc(c.razon_social)}</td>
         <td class="conv-nombre">
           <button class="conv-ver-btn" data-id="${c.id}">${esc(c.nombre)}</button>
         </td>
-        <td class="conv-razon">${esc(c.razon_social)}</td>
         <td>${esc(c.tipo_convenio_nombre)}</td>
         <td>${estadoPill(c.estado)}</td>
         <td>${iconoPdf(c.drive_url, c.nombre_archivo)}</td>
