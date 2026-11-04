@@ -22,13 +22,24 @@ _CONECTORES = {
 
 # Acrónimos conocidos que siempre van en mayúscula
 _ACRONIMOS = {
+    # Instituciones nacionales
     'CONAF', 'CONADI', 'SAG', 'SEREMI', 'PDI', 'MMA', 'MINAGRI', 'MINSEGPRES',
     'MOP', 'MINVU', 'GORE', 'CONAMA', 'SERNAC', 'SERCOTEC', 'CORFO', 'CONAC',
-    'SER', 'SNS', 'FOSIS', 'INDAP', 'DGA', 'DIBAM', 'CMN', 'SENDA', 'SERNAM',
-    'SENADIS', 'SENAMA', 'SENAME', 'SII', 'FONASA', 'ISAPRE', 'AFP', 'RUT',
-    'PDF', 'SAF', 'SBAP', 'SAY', 'CEA', 'CEF', 'CEI', 'CNR', 'CIREN',
-    'MINREL', 'MINSAL', 'MINEDU', 'MDS', 'MDF', 'MDN', 'MIDESO', 'MTESS',
-    'SISS', 'SUBTEL', 'SERNA', 'SMA', 'CMF', 'CNE', 'CDA', 'COSOC',
+    'SNS', 'FOSIS', 'INDAP', 'DGA', 'DIBAM', 'CMN', 'SENDA', 'SERNAM',
+    'SENADIS', 'SENAMA', 'SENAME', 'SII', 'FONASA', 'ISAPRE', 'AFP',
+    'SAF', 'SBAP', 'CEA', 'CEF', 'CEI', 'CNR', 'CIREN',
+    'MINREL', 'MINSAL', 'MINEDU', 'MDS', 'MDN', 'MIDESO',
+    'SISS', 'SUBTEL', 'SMA', 'CMF', 'CNE', 'CDA', 'COSOC',
+    'SUBPESCA', 'SERNAPESCA', 'CONAF', 'MINCIENCIA', 'ANID',
+    # Siglas propias del dominio SNAP/forestal
+    'SNASPE', 'SNAP', 'ASP', 'ASPs',
+    # Siglas jurídicas y administrativas
+    'RUT', 'PDF', 'ONG', 'LTDA', 'SpA', 'SA',
+    # Regiones y organismos internacionales
+    'ONU', 'UNESCO', 'FAO', 'UICN', 'IUCN', 'WWF', 'GEF', 'PNUD', 'PNUMA',
+    'OCDE', 'BID', 'BM',
+    # Siglas de empresas/marcas conocidas (que deben quedar en mayúscula)
+    'GOOGLE', 'SAP', 'IBM',
 }
 
 
@@ -62,11 +73,8 @@ def _smart_title(texto):
             # Acrónimo conocido → siempre mayúscula
             resultado.append(pre + nucleo.upper() + suf)
         elif i > 0 and nucleo.lower() in _CONECTORES:
-            # Conector en posición no inicial → minúscula (va antes del chequeo de longitud)
+            # Conector en posición no inicial → minúscula
             resultado.append(pre + nucleo.lower() + suf)
-        elif nucleo.isupper() and len(nucleo.replace('.', '')) <= 6:
-            # Palabra corta toda en mayúscula → probablemente acrónimo, conservar
-            resultado.append(pre + nucleo.upper() + suf)
         else:
             # Capitalizar primera letra, resto en minúscula
             n_lower = nucleo.lower()
