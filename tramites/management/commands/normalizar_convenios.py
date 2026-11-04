@@ -61,12 +61,12 @@ def _smart_title(texto):
         if nucleo_sin_puntos in _ACRONIMOS:
             # Acrónimo conocido → siempre mayúscula
             resultado.append(pre + nucleo.upper() + suf)
+        elif i > 0 and nucleo.lower() in _CONECTORES:
+            # Conector en posición no inicial → minúscula (va antes del chequeo de longitud)
+            resultado.append(pre + nucleo.lower() + suf)
         elif nucleo.isupper() and len(nucleo.replace('.', '')) <= 6:
             # Palabra corta toda en mayúscula → probablemente acrónimo, conservar
             resultado.append(pre + nucleo.upper() + suf)
-        elif i > 0 and nucleo.lower() in _CONECTORES:
-            # Conector en posición no inicial → minúscula
-            resultado.append(pre + nucleo.lower() + suf)
         else:
             # Capitalizar primera letra, resto en minúscula
             n_lower = nucleo.lower()
