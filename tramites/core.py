@@ -349,6 +349,17 @@ def normalize_tramite(t):
         if pendientes and not devuelta and all(not _email_es_conaf(ep.get('email')) for ep in pendientes):
             recepcion_pendiente = True
             estado_final = 'completado'
+        # a2) Quedan etapas CONAF regionales sin revisar, pero la etapa más recientemente iniciada
+        #     es del titular: CONAF central ya resolvió y entregó al solicitante.
+        #     Las revisiones regionales rezagadas no afectan el estado final.
+        elif pendientes and not devuelta:
+            _hay_conaf_completado = any(_email_es_conaf(e.get('email')) and e.get('estado') == 'completado'
+                                        for e in etapas_info)
+            if _hay_conaf_completado:
+                _ultima = max(pendientes, key=lambda e: str(e.get('fecha_inicio') or ''))
+                if not _email_es_conaf(_ultima.get('email')):
+                    recepcion_pendiente = True
+                    estado_final = 'completado'
         # b) Todas las etapas están completadas pero CeroFilas sigue marcando "pendiente":
         #    el trámite volvió al solicitante y aún no abre su perfil. También es finalizado.
         elif not pendientes and completadas == total_etapas:
