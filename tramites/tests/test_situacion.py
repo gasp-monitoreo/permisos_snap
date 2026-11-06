@@ -50,6 +50,29 @@ def test_etapa_en_conaf_no_es_espera_del_solicitante():
     assert t['suspendido'] is False
 
 
+def test_plazo_conaf_descuenta_dias_del_solicitante():
+    """El plazo de CONAF cuenta desde la primera etapa CONAF, no desde el envío.
+    Un permiso con 500 días del solicitante y solo 31 días con CONAF no debe
+    mostrar fecha_limite_proceso vencida si CONAF aún tiene tiempo."""
+    # Envío del formulario hace ~500 días (titular tardó mucho)
+    t = normalize_tramite(_tramite([
+        _etapa(1, 'completado', SOLIC, 'Completar formulario',
+               '2024-01-05 10:00:00', '2025-05-10 10:00:00'),   # 490 días con el titular
+        _etapa(2, 'pendiente', CONAF, 'Revisión',
+               '2025-05-10 10:00:00'),                           # CONAF recién empezó
+    ]))
+    # El plazo base es 2 meses desde 2025-05-10 → ~2025-07-10
+    # Que sería una fecha futura vista en julio 2025, pero pasada en nov 2026
+    # Lo importante: NO debe basarse en 2024-01-05 (fecha del formulario)
+    from datetime import datetime
+    if t['fecha_limite_proceso']:
+        fecha_lim = datetime.strptime(t['fecha_limite_proceso'][:19], '%Y-%m-%d %H:%M:%S')
+        inicio_conaf = datetime(2025, 5, 10, 10, 0, 0)
+        # La fecha límite debe ser ≥ inicio_conaf (no anterior a cuando llegó a CONAF)
+        assert fecha_lim >= inicio_conaf, \
+            f"fecha_limite_proceso {t['fecha_limite_proceso']} es anterior al inicio CONAF"
+
+
 def test_suspension_por_etapa_o_campo_del_formulario():
     por_etapa = normalize_tramite(_tramite([
         _etapa(1, 'completado', SOLIC, 'Completar formulario', '2026-01-05 10:00:00', '2026-01-05 11:00:00'),

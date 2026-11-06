@@ -4,7 +4,7 @@ import calendar as _calendar
 import re as _re
 import time as _time
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -379,20 +379,37 @@ def normalize_tramite(t):
 
     proceso_id_val = t.get('proceso_id')
     fecha_limite_proceso = None
-    _fecha_envio = None
-    for _e in etapas_info:
-        if 'completar formulario' in (_e.get('tarea_nombre') or '').lower() or \
-           'formulario de solicitud' in (_e.get('tarea_nombre') or '').lower():
-            _fecha_envio = _e.get('fecha_termino')
-            break
-    fecha_base_str = _fecha_envio or t.get('fecha_inicio')
-    if fecha_base_str and proceso_id_val in PROCESO_PLAZO_MESES:
-        try:
-            fi = datetime.strptime(str(fecha_base_str)[:19], '%Y-%m-%d %H:%M:%S')
-            fl = _add_months(fi, PROCESO_PLAZO_MESES[proceso_id_val])
-            fecha_limite_proceso = fl.strftime('%Y-%m-%d %H:%M:%S')
-        except Exception:
-            pass
+    if proceso_id_val in PROCESO_PLAZO_MESES:
+        # El plazo de CONAF se mide desde que el permiso llega a la primera etapa CONAF,
+        # descontando los días que estuvo de vuelta con el solicitante (subsanar, etc.).
+        _primera_conaf_inicio = None
+        for _e in etapas_info:
+            if _email_es_conaf(_e.get('email')):
+                _primera_conaf_inicio = _e.get('fecha_inicio')
+                break
+        if _primera_conaf_inicio:
+            try:
+                fi_conaf = datetime.strptime(str(_primera_conaf_inicio)[:19], '%Y-%m-%d %H:%M:%S')
+                # Sumar días que estuvo con el solicitante DESPUÉS de la primera etapa CONAF
+                dias_solic = 0
+                for _e in etapas_info:
+                    if _email_es_conaf(_e.get('email')):
+                        continue  # etapas CONAF no se descuentan
+                    fi_e_str = _e.get('fecha_inicio')
+                    ft_e_str = _e.get('fecha_termino')
+                    if not fi_e_str:
+                        continue
+                    fi_e = datetime.strptime(str(fi_e_str)[:19], '%Y-%m-%d %H:%M:%S')
+                    if fi_e < fi_conaf:
+                        continue  # etapa previa al primer CONAF (formulario inicial)
+                    if ft_e_str:
+                        ft_e = datetime.strptime(str(ft_e_str)[:19], '%Y-%m-%d %H:%M:%S')
+                        dias_solic += max(0, (ft_e - fi_e).days)
+                fl = _add_months(fi_conaf, PROCESO_PLAZO_MESES[proceso_id_val])
+                fl += timedelta(days=dias_solic)
+                fecha_limite_proceso = fl.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                pass
 
     return {
         'id':                  t.get('id'),
