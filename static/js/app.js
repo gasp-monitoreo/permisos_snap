@@ -865,7 +865,10 @@ function filtrarPorAmbito(lista, { sinRegion = false, sinArea = false } = {}) {
   if (STATE.area && !sinArea && !sinRegion) r = r.filter(t => areasEnRegion(t, STATE.region).some(x => areaCoincide(x, STATE.area)));
   if (STATE.mio) {
     const yo = (window.PERFIL?.email || '').toLowerCase();
-    r = r.filter(t => yo && (t.etapa_actual?.email || '').toLowerCase() === yo);
+    r = r.filter(t => yo && (
+      (t.etapa_actual?.email || '').toLowerCase() === yo ||
+      (t.etapas || []).some(e => e.estado === 'pendiente' && (e.email || '').toLowerCase() === yo)
+    ));
   }
   return r;
 }
@@ -911,7 +914,10 @@ function renderAmbito() {
   const total = tramitesDelTipo().length;
   const yo = (window.PERFIL?.email || '').toLowerCase();
   const nMio = yo ? STATE.tramites.filter(t => (STATE.tipo === 'film' ? IDS_FILMACION : IDS_INVESTIGACION).has(t.proceso_id)
-    && (t.etapa_actual?.email || '').toLowerCase() === yo).length : 0;
+    && (
+      (t.etapa_actual?.email || '').toLowerCase() === yo ||
+      (t.etapas || []).some(e => e.estado === 'pendiente' && (e.email || '').toLowerCase() === yo)
+    )).length : 0;
   el.innerHTML = `<div class="amb">
     <label class="amb-campo"><span>Región</span>
       <select id="amb-region" ${fija ? 'disabled' : ''}>
