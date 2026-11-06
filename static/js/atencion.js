@@ -15,6 +15,7 @@ const ATN_ESPERA_LARGA = 30;    // días sin respuesta del solicitante que ameri
 const ATN_LISTAS = {
   atraso:      { titulo: 'Atrasadas en CONAF',              sub: 'Plazo vencido con la etapa en manos de CONAF. Ordenadas por días de atraso.' },
   proximos:    { titulo: `Vencen en ${ATN_HORIZONTE} días`, sub: 'Aún al día: actuar ahora evita que pasen a atraso.' },
+  al_dia:      { titulo: 'Activos por vencer',              sub: 'Trámites activos al día con plazo por vencer. Ordenados por urgencia.' },
   solicitante: { titulo: 'Esperando al solicitante',        sub: 'Deben responder, subsanar o cerrar el trámite en Cero Filas. No es atraso de CONAF.' },
   completado:  { titulo: 'Aprobadas',                       sub: 'Solicitudes aprobadas en el rango de años seleccionado.' },
   rechazado:   { titulo: 'Rechazadas',                      sub: 'Solicitudes rechazadas en el rango de años seleccionado.' },
@@ -49,7 +50,7 @@ function _atnAtrasadasEn(ts, fecha) {
 
 function _atnCalcular(ts, region) {
   const hoy = new Date();
-  const L = { atraso: [], proximos: [], solicitante: [], completado: [], rechazado: [] };
+  const L = { atraso: [], proximos: [], al_dia: [], solicitante: [], completado: [], rechazado: [] };
   let cierre = 0, suspendidas = 0, largas = 0;
   ts.forEach(t => {
     const sit = situacionTramite(t);
@@ -60,6 +61,7 @@ function _atnCalcular(ts, region) {
       const fv = fechaVencimientoEfectiva(t);
       const d = fv ? Math.ceil((new Date(fv) - hoy) / ATN_DIA) : null;
       if (d !== null && d >= 0 && d <= ATN_HORIZONTE) L.proximos.push({ ...base, dias: d });
+      else L.al_dia.push({ ...base, dias: d });
     } else if (sit === 'espera_solicitante' || sit === 'cierre_solicitante') {
       const desde = sit === 'cierre_solicitante' ? (t.fecha_resolucion || t.fecha_modificacion) : (ea.fecha_inicio || t.fecha_inicio);
       const dias = _diasDesde(desde) ?? 0;
@@ -76,6 +78,12 @@ function _atnCalcular(ts, region) {
   });
   L.atraso.sort((a, b) => b.dias - a.dias);
   L.proximos.sort((a, b) => a.dias - b.dias);
+  L.al_dia.sort((a, b) => {
+    if (a.dias === null && b.dias === null) return 0;
+    if (a.dias === null) return 1;
+    if (b.dias === null) return -1;
+    return a.dias - b.dias;
+  });
   L.solicitante.sort((a, b) => a.cierre - b.cierre || b.dias - a.dias);
   L.completado.sort((a, b) => a.dias - b.dias);
   L.rechazado.sort((a, b) => a.dias - b.dias);
@@ -121,6 +129,7 @@ function _atnFrase(a) {
 const _ATN_ICONOS = {
   atraso:     '<path d="M12 3 2 20h20zM12 10v4M12 17.5v.01"/>',
   proximos:   '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  al_dia:     '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v3M16 2v3"/><path d="M8 14h4M8 17h6"/>',
   solicitante:'<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20a6.5 6.5 0 0 1 13 0M18 9v6M21 9v6"/>',
   completado: '<circle cx="12" cy="12" r="9"/><polyline points="8 12 11 15 16 10"/>',
   rechazado:  '<circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/>',
@@ -181,6 +190,12 @@ function renderAtencion(ts, region) {
     lineas ? `<ul class="atn-lineas">${lineas}</ul>` : '<p class="atn-ok">Ninguna espera al solicitante.</p>',
     L.solicitante.length ? (a.largas ? 'Ver a quién recordar' : 'Ver solicitudes') : '');
 
+  const nAD = L.al_dia.length;
+  const primerVence = nAD && L.al_dia[0].dias !== null ? `<span class="atn-delta">el primero vence en ${L.al_dia[0].dias} d</span>` : '';
+  const t3b = _atnTarjeta('al_dia', 'cian', nAD, primerVence,
+    nAD ? _atnTopHtml(L.al_dia, 'al_dia', porArea) : '<p class="atn-ok">Sin activos en este período.</p>',
+    nAD ? `Ver los ${nAD}` : '');
+
   const nC = L.completado.length;
   const t4 = _atnTarjeta('completado', 'verde', nC, '',
     nC ? _atnTopHtml(L.completado, 'completado', porArea) : '<p class="atn-ok">Sin aprobadas en este período.</p>',
@@ -207,7 +222,7 @@ function renderAtencion(ts, region) {
       <span class="atn-escala">${porArea === 'etapa' ? 'Agrupado por etapa en curso' : porArea ? 'Agrupado por área protegida · clic en un área para acercarse' : 'Agrupado por región · clic en una región para acercarse'}</span>
     </div>
     <p class="atn-frase">${_atnFrase(a)}</p>
-    <div class="atn-cards">${t2}${t1}${t4}${t5}</div>
+    <div class="atn-cards">${t2}${t3b}${t1}${t4}${t5}</div>
     ${avisoDup}`;
 
   if (!root.dataset.listo) {
@@ -237,6 +252,7 @@ function _atnAbrirPanel(clave, grupo) {
   if (grupo) items = items.filter(i => _atnGrupos(i.t, _atn.porArea).includes(grupo));
   const etiqueta = i => clave === 'atraso' ? `${i.dias} d de atraso`
     : clave === 'proximos' ? (i.dias === 0 ? 'vence hoy' : `vence en ${i.dias} d`)
+    : clave === 'al_dia' ? (i.dias !== null ? `vence en ${i.dias} d` : 'sin vencimiento')
     : clave === 'completado' ? `aprobado hace ${i.dias} d`
     : clave === 'rechazado' ? `rechazado hace ${i.dias} d`
     : i.cierre ? `falta cierre · ${i.dias} d` : `espera ${i.dias} d`;

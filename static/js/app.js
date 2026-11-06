@@ -33,6 +33,7 @@ const STATE = {
   region: null,              // ámbito del Resumen: región (nombre en REGIONES_CHILE) o null = todo el país
   area: null,                // … y área protegida dentro de la región, o null
   mio: false,                // solo permisos cuya etapa actual está a cargo del usuario conectado
+  _extrasMio: null,          // trámites activos del usuario fuera del rango cargado (pre-fetch)
   driveNeedsAuth: false,
 };
 // El ámbito también viaja en la URL (?region=…&area=…&mio=1): un enlace abre la misma vista
@@ -679,6 +680,14 @@ async function init() {
     STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
     updateLastUpdate();
     renderDashboard();
+    // Pre-cargar trámites activos del usuario para mostrar el conteo "A mi cargo" sin esperar el click
+    const _yo = (window.PERFIL?.email || '').toLowerCase();
+    if (_yo && STATE._extrasMio === null) {
+      fetchJSON('/api/mis_tramites_activos').then(resp => {
+        STATE._extrasMio = (resp.data || []).filter(t => !STATE.tramites.some(x => x.id === t.id));
+        renderAmbito();
+      }).catch(() => { STATE._extrasMio = []; });
+    }
     renderPortada();
 
     // Mostrar banner solo si la API está caída o si servimos datos parciales (portada_historico)
@@ -921,7 +930,8 @@ function renderAmbito() {
   const sel = a => STATE.area && areaCoincide(a, STATE.area) && (a === STATE.area || !listaAreas.some(([x]) => x === STATE.area));
   const total = tramitesDelTipo().length;
   const yo = (window.PERFIL?.email || '').toLowerCase();
-  const nMio = yo ? STATE.tramites.filter(t => (STATE.tipo === 'film' ? IDS_FILMACION : IDS_INVESTIGACION).has(t.proceso_id)
+  const _todosMio = yo ? [...STATE.tramites, ...(STATE._extrasMio || []).filter(t => !STATE.tramites.some(x => x.id === t.id))] : [];
+  const nMio = yo ? _todosMio.filter(t => (STATE.tipo === 'film' ? IDS_FILMACION : IDS_INVESTIGACION).has(t.proceso_id)
     && (
       (t.etapa_actual?.email || '').toLowerCase() === yo ||
       (t.etapas || []).some(e => e.estado === 'pendiente' && (e.email || '').toLowerCase() === yo)
@@ -2866,17 +2876,23 @@ document.addEventListener('DOMContentLoaded', () => {
       STATE.mio = e.target.checked;
       _guardarAmbitoUrl();
       if (STATE.mio) {
-        // Buscar trámites activos (pendientes) del usuario en todos los años
-        // y agregar al rango cargado los que falten, sin cambiar el selector.
-        fetchJSON('/api/mis_tramites_activos').then(resp => {
-          const extras = (resp.data || []).filter(t => !STATE.tramites.some(x => x.id === t.id));
-          if (extras.length) {
+        const aplicar = extras => {
+          const nuevos = extras.filter(t => !STATE.tramites.some(x => x.id === t.id));
+          if (nuevos.length) {
             STATE._tramitesSinMioExtras = STATE.tramites;
-            STATE.tramites = [...STATE.tramites, ...extras];
+            STATE.tramites = [...STATE.tramites, ...nuevos];
             STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
           }
           renderDashboard();
-        }).catch(() => renderDashboard());
+        };
+        if (STATE._extrasMio !== null) {
+          aplicar(STATE._extrasMio);
+        } else {
+          fetchJSON('/api/mis_tramites_activos').then(resp => {
+            STATE._extrasMio = resp.data || [];
+            aplicar(STATE._extrasMio);
+          }).catch(() => renderDashboard());
+        }
       } else {
         // Restaurar el conjunto sin extras al desactivar
         if (STATE._tramitesSinMioExtras) {

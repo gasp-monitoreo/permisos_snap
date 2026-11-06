@@ -329,6 +329,7 @@ window.filtrarTablaPermisos = clave => {
   if (clave === 'atraso') RES_FILTRO.sit.add('vencido');
   else if (clave === 'solicitante') { RES_FILTRO.sit.add('espera_solicitante'); RES_FILTRO.sit.add('cierre_solicitante'); }
   else if (clave === 'proximos') _resVista = 'vence7';
+  else if (clave === 'al_dia') RES_FILTRO.sit.add('al_dia');
   const des = document.getElementById('desempeno');
   if (des) des.open = true;
   _resRepintar();
