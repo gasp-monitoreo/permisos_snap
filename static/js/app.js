@@ -254,7 +254,7 @@ function tramiteEsperaSolicitante(t) {
 function situacionTramite(t) {
   if (t.ajuste?.sit) return t.ajuste.sit;          // estado ajustado por un funcionario (tramites/ajustes.py)
   if (t.estado === 'rechazado') return 'rechazado';
-  if (t.estado === 'completado') return t.recepcion_pendiente ? 'cierre_solicitante' : 'completado';
+  if (t.estado === 'completado') return 'completado';
   if (t.suspendido) return 'suspendido';
   if (tramiteEsperaSolicitante(t)) return 'espera_solicitante';
   return tramiteEsVencido(t) ? 'vencido' : 'al_dia';
