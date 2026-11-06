@@ -769,16 +769,16 @@ function renderDashboard() {
   const si   = _statsFor(invs);
   const sf   = _statsFor(films);
 
-  $('kpi-total').textContent      = s.total;
-  $('kpi-completado').textContent = s.completados;
-  $('kpi-rechazado').textContent  = s.rechazados;
-  $('kpi-mediana').textContent    = s.mediana;
+  if ($('kpi-total'))      { $('kpi-total').textContent      = s.total; }
+  if ($('kpi-completado')) { $('kpi-completado').textContent = s.completados; }
+  if ($('kpi-rechazado'))  { $('kpi-rechazado').textContent  = s.rechazados; }
+  if ($('kpi-mediana'))    { $('kpi-mediana').textContent    = s.mediana; }
 
   _setSplit('kpi-total-split',      si.total,      sf.total);
   _setSplit('kpi-completado-split', si.completados, sf.completados);
   _setSplit('kpi-rechazado-split',  si.rechazados,  sf.rechazados);
   _setSplit('kpi-mediana-split',    si.mediana,     sf.mediana);
-  $('desempeno-res').textContent =
+  if ($('desempeno-res')) $('desempeno-res').textContent =
     `${s.total} ingresadas · ${s.completados} aprobadas · ${s.rechazados} rechazadas · mediana ${s.mediana} d`;
 
   // Orden: ámbito → requiere atención → territorio → desempeño (gráficos + tabla de permisos).
