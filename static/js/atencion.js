@@ -13,9 +13,11 @@ const ATN_DIA = 86400000;
 const ATN_HORIZONTE = 7;        // días hacia adelante para «vence pronto»
 const ATN_ESPERA_LARGA = 30;    // días sin respuesta del solicitante que ameritan recordatorio
 const ATN_LISTAS = {
-  atraso:      { titulo: 'Atrasadas en CONAF',          sub: 'Plazo vencido con la etapa en manos de CONAF. Ordenadas por días de atraso.' },
+  atraso:      { titulo: 'Atrasadas en CONAF',              sub: 'Plazo vencido con la etapa en manos de CONAF. Ordenadas por días de atraso.' },
   proximos:    { titulo: `Vencen en ${ATN_HORIZONTE} días`, sub: 'Aún al día: actuar ahora evita que pasen a atraso.' },
-  solicitante: { titulo: 'Esperando al solicitante',    sub: 'Deben responder, subsanar o cerrar el trámite en Cero Filas. No es atraso de CONAF.' },
+  solicitante: { titulo: 'Esperando al solicitante',        sub: 'Deben responder, subsanar o cerrar el trámite en Cero Filas. No es atraso de CONAF.' },
+  completado:  { titulo: 'Aprobadas',                       sub: 'Solicitudes aprobadas en el rango de años seleccionado.' },
+  rechazado:   { titulo: 'Rechazadas',                      sub: 'Solicitudes rechazadas en el rango de años seleccionado.' },
 };
 let _atn = null;   // último cálculo (para abrir el panel sin recalcular)
 
@@ -47,7 +49,7 @@ function _atnAtrasadasEn(ts, fecha) {
 
 function _atnCalcular(ts, region) {
   const hoy = new Date();
-  const L = { atraso: [], proximos: [], solicitante: [] };
+  const L = { atraso: [], proximos: [], solicitante: [], completado: [], rechazado: [] };
   let cierre = 0, suspendidas = 0, largas = 0;
   ts.forEach(t => {
     const sit = situacionTramite(t);
@@ -64,11 +66,19 @@ function _atnCalcular(ts, region) {
       if (sit === 'cierre_solicitante') cierre++;
       else if (dias > ATN_ESPERA_LARGA) largas++;
       L.solicitante.push({ ...base, dias, cierre: sit === 'cierre_solicitante' });
+    } else if (sit === 'completado') {
+      const dias = _diasDesde(t.fecha_resolucion || t.fecha_modificacion) ?? 0;
+      L.completado.push({ ...base, dias });
+    } else if (sit === 'rechazado') {
+      const dias = _diasDesde(t.fecha_resolucion || t.fecha_modificacion) ?? 0;
+      L.rechazado.push({ ...base, dias });
     } else if (sit === 'suspendido') suspendidas++;
   });
   L.atraso.sort((a, b) => b.dias - a.dias);
   L.proximos.sort((a, b) => a.dias - b.dias);
   L.solicitante.sort((a, b) => a.cierre - b.cierre || b.dias - a.dias);
+  L.completado.sort((a, b) => a.dias - b.dias);
+  L.rechazado.sort((a, b) => a.dias - b.dias);
   const semana = new Date(hoy - 7 * ATN_DIA);
   const delta = _atnAtrasadasEn(ts, hoy) - _atnAtrasadasEn(ts, semana);
   const dup = ts.filter(t => STATE.duplicados?.has(t.id));
@@ -109,9 +119,11 @@ function _atnFrase(a) {
 }
 
 const _ATN_ICONOS = {
-  atraso: '<path d="M12 3 2 20h20zM12 10v4M12 17.5v.01"/>',
-  proximos: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  solicitante: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20a6.5 6.5 0 0 1 13 0M18 9v6M21 9v6"/>',
+  atraso:     '<path d="M12 3 2 20h20zM12 10v4M12 17.5v.01"/>',
+  proximos:   '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  solicitante:'<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20a6.5 6.5 0 0 1 13 0M18 9v6M21 9v6"/>',
+  completado: '<circle cx="12" cy="12" r="9"/><polyline points="8 12 11 15 16 10"/>',
+  rechazado:  '<circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/>',
 };
 
 function _atnTarjeta(clave, clase, cifra, extra, cuerpo, boton) {
@@ -129,7 +141,7 @@ function _atnTopHtml(items, clave, porArea) {
     const cod = !porArea ? _atnRegion(x.g)?.codigo : '';
     return `<li><button data-atn-lista="${clave}" data-atn-grupo="${escHtml(x.g)}" title="${porArea === 'etapa' ? 'Ver estas solicitudes' : porArea ? 'Acercarse a esta área protegida' : 'Acercarse a esta región'}">
       <span>${cod ? `<span class="reg-cod">${cod}</span> ` : ''}${escHtml(x.g)}</span>
-      <em>${x.n} · ${clave === 'atraso' ? 'máx.' : 'hasta'} ${x.max} d</em></button></li>`;
+      <em>${x.n}${clave === 'atraso' || clave === 'proximos' ? ` · ${clave === 'atraso' ? 'máx.' : 'hasta'} ${x.max} d` : ''}</em></button></li>`;
   }).join('')}</ul>`;
 }
 
@@ -169,6 +181,16 @@ function renderAtencion(ts, region) {
     lineas ? `<ul class="atn-lineas">${lineas}</ul>` : '<p class="atn-ok">Ninguna espera al solicitante.</p>',
     L.solicitante.length ? (a.largas ? 'Ver a quién recordar' : 'Ver solicitudes') : '');
 
+  const nC = L.completado.length;
+  const t4 = _atnTarjeta('completado', 'verde', nC, '',
+    nC ? _atnTopHtml(L.completado, 'completado', porArea) : '<p class="atn-ok">Sin aprobadas en este período.</p>',
+    nC ? `Ver las ${nC}` : '');
+
+  const nR = L.rechazado.length;
+  const t5 = _atnTarjeta('rechazado', 'morado', nR, '',
+    nR ? _atnTopHtml(L.rechazado, 'rechazado', porArea) : '<p class="atn-ok">Sin rechazadas en este período.</p>',
+    nR ? `Ver las ${nR}` : '');
+
   const fijo = window.PERFIL?.solo_su_region && !window.PERFIL?.superusuario;
   const ambito = region
     ? `<span class="atn-ambito">${_atnRegion(region)?.codigo ? `<span class="reg-cod">${_atnRegion(region).codigo}</span> ` : ''}${escHtml(region)}${fijo || STATE.area ? '' : ' <button data-atn-pais title="Volver a todo el país" aria-label="Volver a todo el país">✕</button>'}
@@ -185,7 +207,7 @@ function renderAtencion(ts, region) {
       <span class="atn-escala">${porArea === 'etapa' ? 'Agrupado por etapa en curso' : porArea ? 'Agrupado por área protegida · clic en un área para acercarse' : 'Agrupado por región · clic en una región para acercarse'}</span>
     </div>
     <p class="atn-frase">${_atnFrase(a)}</p>
-    <div class="atn-cards">${t1}${t2}${t3}</div>
+    <div class="atn-cards">${t2}${t1}${t4}${t5}${t3}</div>
     ${avisoDup}`;
 
   if (!root.dataset.listo) {
@@ -215,6 +237,8 @@ function _atnAbrirPanel(clave, grupo) {
   if (grupo) items = items.filter(i => _atnGrupos(i.t, _atn.porArea).includes(grupo));
   const etiqueta = i => clave === 'atraso' ? `${i.dias} d de atraso`
     : clave === 'proximos' ? (i.dias === 0 ? 'vence hoy' : `vence en ${i.dias} d`)
+    : clave === 'completado' ? `aprobado hace ${i.dias} d`
+    : clave === 'rechazado' ? `rechazado hace ${i.dias} d`
     : i.cierre ? `falta cierre · ${i.dias} d` : `espera ${i.dias} d`;
   const clase = i => clave === 'atraso' || (clave === 'proximos' && i.dias <= 1) || (!i.cierre && i.dias > ATN_ESPERA_LARGA) ? 'fuerte' : '';
   document.getElementById('atn-panel-tit').textContent = ATN_LISTAS[clave].titulo + (grupo ? ` · ${grupo}` : '');
