@@ -875,7 +875,8 @@ function filtrarPorAmbito(lista, { sinRegion = false, sinArea = false } = {}) {
     const yo = (window.PERFIL?.email || '').toLowerCase();
     r = r.filter(t => yo && (
       (t.etapa_actual?.email || '').toLowerCase() === yo ||
-      (t.etapas || []).some(e => e.estado === 'pendiente' && (e.email || '').toLowerCase() === yo)
+      (t.etapas || []).some(e => e.estado === 'pendiente' && (e.email || '').toLowerCase() === yo) ||
+      (t.recepcion_pendiente && (t.etapas || []).some(e => e.estado === 'completado' && (e.email || '').toLowerCase() === yo))
     ));
   }
   return r;
@@ -924,7 +925,8 @@ function renderAmbito() {
   const nMio = yo ? STATE.tramites.filter(t => (STATE.tipo === 'film' ? IDS_FILMACION : IDS_INVESTIGACION).has(t.proceso_id)
     && (
       (t.etapa_actual?.email || '').toLowerCase() === yo ||
-      (t.etapas || []).some(e => e.estado === 'pendiente' && (e.email || '').toLowerCase() === yo)
+      (t.etapas || []).some(e => e.estado === 'pendiente' && (e.email || '').toLowerCase() === yo) ||
+      (t.recepcion_pendiente && (t.etapas || []).some(e => e.estado === 'completado' && (e.email || '').toLowerCase() === yo))
     )).length : 0;
   el.innerHTML = `<div class="amb">
     <label class="amb-campo"><span>Región</span>

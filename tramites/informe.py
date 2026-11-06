@@ -22,7 +22,7 @@ CSS = """
 * { font-family: sans-serif; }
 body { font-size: 9.5pt; color: #1A1A1A; line-height: 1.5; }
 h1 { font-size: 16pt; color: #1A3A1A; margin: 4pt 0 3pt 0; font-weight: 700; }
-h2 { font-size: 10pt; color: #2C6B14; margin: 14pt 0 5pt 0; padding: 3pt 6pt; background-color: #F2F7EE; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3pt; }
+h2 { font-size: 10pt; color: #2C6B14; margin: 14pt 0 5pt 0; padding: 3pt 0; border-bottom: 1.5pt solid #3D7A23; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3pt; }
 h3 { font-size: 9.5pt; color: #2C4A1A; margin: 8pt 0 3pt 0; font-weight: 600; }
 p { margin: 2pt 0 4pt 0; }
 .muted { color: #6B7B6B; }
@@ -35,8 +35,7 @@ th { background-color: #3D7A23; color: #FFFFFF; font-size: 8pt; font-weight: 600
 .kv p.v { margin: 2pt 0 0 0; text-align: justify; }
 .caja p, td { text-align: justify; }
 .grid td { border: 1px solid #DCE8D4; }
-.grid tr:nth-child(even) td { background-color: #F8FCF6; }
-.caja { background-color: #F8FCF6; border-left: 3pt solid #3D7A23; border-top: 1px solid #DCE8D4; border-right: 1px solid #DCE8D4; border-bottom: 1px solid #DCE8D4; padding: 7pt 10pt; }
+.caja { border-left: 3pt solid #3D7A23; border-top: 1px solid #DCE8D4; border-right: 1px solid #DCE8D4; border-bottom: 1px solid #DCE8D4; padding: 7pt 10pt; }
 .barra { font-size: 11pt; line-height: 1; letter-spacing: -1pt; margin: 2pt 0; }
 .cifra { font-size: 14pt; font-weight: 700; color: #1A3A1A; }
 """
