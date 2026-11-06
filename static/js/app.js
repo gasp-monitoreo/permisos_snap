@@ -61,10 +61,18 @@ function _tituloTramite(t) {
          t.titulo_investigacion || ''; // fallback para objetos del endpoint compliance
 }
 
+function _conafTieneEtapaPendiente(t) {
+  return (t.etapas || []).some(
+    e => e.estado === 'pendiente' && (e.email || '').toLowerCase().endsWith('@conaf.cl')
+  );
+}
+
 function detectarDuplicadosRegionales(tramites) {
   const grupos = new Map();
   for (const t of tramites) {
     if (t.estado === 'rechazado' || t.borrador) continue;
+    // Excluir tramites completados o devueltos al titular (CONAF ya terminó su parte)
+    if (t.estado === 'completado' || !_conafTieneEtapaPendiente(t)) continue;
     const email = _normInv(t.email_solicitante || '');
     if (!email) continue;
     const titulo = _normInv(_tituloTramite(t));
