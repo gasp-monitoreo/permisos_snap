@@ -146,6 +146,48 @@ def get_tramites(
         return api.create_response(request, {'ok': False, 'error': str(e)}, status=500)
 
 
+@api.get('/mis_tramites_activos')
+def mis_tramites_activos(request):
+    """Trámites activos (estado=pendiente) del usuario en todos los años de caché.
+
+    Usado por el botón 'A mi cargo' para traer permisos que siguen en tramitación
+    aunque su fecha_inicio sea de un año anterior al rango actualmente visible.
+    """
+    from django.core.cache import cache
+    from datetime import datetime as _dt
+
+    email_yo = (request.user.email or '').lower()
+    if not email_yo:
+        return {'ok': True, 'data': []}
+
+    anio_actual = _dt.now().year
+    activos = []
+    vistos = set()
+
+    for anio in range(2019, anio_actual + 1):
+        entrada = cache.get(f'tramites:{anio}-{anio}')
+        if not entrada:
+            continue
+        for t in (entrada.get('data') or []):
+            if t.get('id') in vistos:
+                continue
+            if t.get('estado') != 'pendiente':
+                continue
+            etapa_actual = t.get('etapa_actual') or {}
+            tiene = (etapa_actual.get('email') or '').lower() == email_yo
+            if not tiene:
+                tiene = any(
+                    e.get('estado') == 'pendiente' and (e.get('email') or '').lower() == email_yo
+                    for e in (t.get('etapas') or [])
+                )
+            if tiene:
+                activos.append(t)
+                vistos.add(t['id'])
+
+    activos = privacidad.tramites(request, _filtrar_region(request, activos))
+    return {'ok': True, 'data': activos, 'total': len(activos)}
+
+
 @api.get('/debug/areas/{tramite_id}')
 @requiere(accion='editar')
 def debug_areas(request, tramite_id: int):

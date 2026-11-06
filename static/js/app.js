@@ -2857,23 +2857,39 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (e.target.id === 'amb-mio') {
       STATE.mio = e.target.checked;
       _guardarAmbitoUrl();
-      if (STATE.mio && parseInt($('rango-desde').value) > ANIO_MIN) {
-        $('rango-desde').value = ANIO_MIN;
-        showLoading('Cargando todos los años…');
-        loadTramites(paramsRango()).then(data => {
-          STATE.tramites = filtrarRango(data);
-          STATE.rangoCargado = `${ANIO_MIN}-${ANIO_MAX}`;
-          STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
-          hideLoading();
+      if (STATE.mio) {
+        // Buscar trámites activos (pendientes) del usuario en todos los años
+        // y agregar al rango cargado los que falten, sin cambiar el selector.
+        fetchJSON('/api/mis_tramites_activos').then(resp => {
+          const extras = (resp.data || []).filter(t => !STATE.tramites.some(x => x.id === t.id));
+          if (extras.length) {
+            STATE._tramitesSinMioExtras = STATE.tramites;
+            STATE.tramites = [...STATE.tramites, ...extras];
+            STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
+          }
           renderDashboard();
-        }).catch(() => { hideLoading(); renderDashboard(); });
+        }).catch(() => renderDashboard());
       } else {
+        // Restaurar el conjunto sin extras al desactivar
+        if (STATE._tramitesSinMioExtras) {
+          STATE.tramites = STATE._tramitesSinMioExtras;
+          STATE._tramitesSinMioExtras = null;
+          STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
+        }
         renderDashboard();
       }
     }
   });
   $('filtro-regiones').addEventListener('click', e => {
-    if (e.target.closest('#amb-limpiar')) { STATE.mio = false; setAmbito(null); }
+    if (e.target.closest('#amb-limpiar')) {
+      STATE.mio = false;
+      if (STATE._tramitesSinMioExtras) {
+        STATE.tramites = STATE._tramitesSinMioExtras;
+        STATE._tramitesSinMioExtras = null;
+        STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
+      }
+      setAmbito(null);
+    }
   });
 
   // Rango de años — validar que desde ≤ hasta

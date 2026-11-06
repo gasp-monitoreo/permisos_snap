@@ -72,20 +72,6 @@ def obtener(desde, hasta, forzar=False):
             _refrescar_en_segundo_plano(desde, hasta)
         return entrada
 
-    # Rango multi-año: combinar desde caches individuales si todos existen
-    if desde != hasta and not forzar:
-        por_anio = [(y, cache.get(_clave(y, y))) for y in range(desde, hasta + 1)]
-        if all(e is not None for _, e in por_anio):
-            todos = []
-            ts_min = min(e['ts'] for _, e in por_anio)
-            for _, e in por_anio:
-                todos.extend(e['data'])
-            entrada = {'ts': ts_min, 'data': todos}
-            cache.set(_clave(desde, hasta), entrada, VIGENCIA_SEG)
-            if time.time() - ts_min > FRESCO_SEG:
-                _refrescar_en_segundo_plano(desde, hasta)
-            return entrada
-
     return _descargar(desde, hasta)
 
 
