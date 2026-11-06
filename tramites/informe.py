@@ -20,24 +20,25 @@ ESTADOS = {'pendiente': 'En trámite', 'completado': 'Aprobado', 'rechazado': 'R
 
 CSS = """
 * { font-family: sans-serif; }
-body { font-size: 9.5pt; color: #0E2219; line-height: 1.4; }
-h1 { font-size: 17pt; color: #013722; margin: 4pt 0 2pt 0; }
-h2 { font-size: 11pt; color: #2C6B14; margin: 14pt 0 5pt 0; padding-bottom: 2pt; border-bottom: 1px solid #CDE4BC; text-transform: uppercase; }
-h3 { font-size: 9.5pt; color: #013722; margin: 8pt 0 3pt 0; }
+body { font-size: 9.5pt; color: #1A1A1A; line-height: 1.5; }
+h1 { font-size: 16pt; color: #1A3A1A; margin: 4pt 0 3pt 0; font-weight: 700; }
+h2 { font-size: 10pt; color: #2C6B14; margin: 14pt 0 5pt 0; padding: 3pt 6pt; background-color: #F2F7EE; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3pt; }
+h3 { font-size: 9.5pt; color: #2C4A1A; margin: 8pt 0 3pt 0; font-weight: 600; }
 p { margin: 2pt 0 4pt 0; }
-.muted { color: #5F6B62; }
+.muted { color: #6B7B6B; }
 .small { font-size: 8pt; }
 table { width: 100%; border-collapse: collapse; margin: 2pt 0 6pt 0; }
-td, th { padding: 3pt 5pt; vertical-align: top; text-align: left; }
-th { background-color: #013722; color: #FFFFFF; font-size: 8pt; }
-.kv { border-bottom: 1px solid #ECE9E1; padding: 3pt 0 4pt 0; }
-.kv p.k { color: #5F6B62; font-size: 7.5pt; font-weight: bold; text-transform: uppercase; margin: 0; }
-.kv p.v { margin: 1pt 0 0 0; text-align: justify; }
+td, th { padding: 4pt 6pt; vertical-align: top; text-align: left; }
+th { background-color: #3D7A23; color: #FFFFFF; font-size: 8pt; font-weight: 600; }
+.kv { border-bottom: 1px solid #E8EDE8; padding: 4pt 0 5pt 0; }
+.kv p.k { color: #6B7B6B; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3pt; margin: 0; }
+.kv p.v { margin: 2pt 0 0 0; text-align: justify; }
 .caja p, td { text-align: justify; }
-.grid td { border: 1px solid #E4E1D5; }
-.caja { background-color: #FAF9F4; border: 1px solid #E4E1D5; padding: 6pt 8pt; }
+.grid td { border: 1px solid #DCE8D4; }
+.grid tr:nth-child(even) td { background-color: #F8FCF6; }
+.caja { background-color: #F8FCF6; border-left: 3pt solid #3D7A23; border-top: 1px solid #DCE8D4; border-right: 1px solid #DCE8D4; border-bottom: 1px solid #DCE8D4; padding: 7pt 10pt; }
 .barra { font-size: 11pt; line-height: 1; letter-spacing: -1pt; margin: 2pt 0; }
-.cifra { font-size: 15pt; font-weight: bold; color: #013722; }
+.cifra { font-size: 14pt; font-weight: 700; color: #1A3A1A; }
 """
 
 

@@ -1508,7 +1508,9 @@ def informe_pdf(request, tramite_id: int):
     t, err = _tramite_con_acceso(request, tramite_id)
     if err:
         return err
-    protegido = not privacidad.ve_sensible(request.user)
+    _ue = (request.user.email or '').lower()
+    _es_conaf_user = _ue.endswith('@conaf.cl') or _ue.endswith('@conaf.gob.cl')
+    protegido = not (privacidad.ve_sensible(request.user) or _es_conaf_user)
     feats = [r.como_feature() for r in RegistroGeografico.objects.filter(tramite_id=tramite_id)]
     email = (t.get('email_solicitante') or '').strip().lower()
     nombre = (t.get('nombre_solicitante') or '').strip().lower()
