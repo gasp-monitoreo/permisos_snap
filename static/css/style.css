@@ -1792,7 +1792,7 @@ a.sb-logout { text-decoration: none; }
 .atn-escala { font-size: 12.5px; color: var(--muted); }
 .atn-frase { font-size: 17px; font-weight: 500; line-height: 1.55; color: var(--text); margin: 6px 0 16px; max-width: 980px; }
 .atn-frase strong { font-weight: 700; color: var(--atn-rojo); }
-.atn-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+.atn-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .atn-card { --c: var(--atn-rojo); background: var(--surface); border: 1px solid var(--border); border-top: 4px solid var(--c);
   border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px 14px; display: flex; flex-direction: column; min-width: 0; }
 .atn-card--ambar  { --c: var(--atn-ambar); }
