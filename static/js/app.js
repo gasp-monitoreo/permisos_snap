@@ -2854,7 +2854,23 @@ document.addEventListener('DOMContentLoaded', () => {
   $('filtro-regiones').addEventListener('change', e => {
     if (e.target.id === 'amb-region') setAmbito(e.target.value || null);
     else if (e.target.id === 'amb-area') setAmbito(STATE.region, e.target.value || null);
-    else if (e.target.id === 'amb-mio') { STATE.mio = e.target.checked; _guardarAmbitoUrl(); renderDashboard(); }
+    else if (e.target.id === 'amb-mio') {
+      STATE.mio = e.target.checked;
+      _guardarAmbitoUrl();
+      if (STATE.mio && parseInt($('rango-desde').value) > ANIO_MIN) {
+        $('rango-desde').value = ANIO_MIN;
+        showLoading('Cargando todos los años…');
+        loadTramites(paramsRango()).then(data => {
+          STATE.tramites = filtrarRango(data);
+          STATE.rangoCargado = `${ANIO_MIN}-${ANIO_MAX}`;
+          STATE.duplicados = detectarDuplicadosRegionales(STATE.tramites);
+          hideLoading();
+          renderDashboard();
+        }).catch(() => { hideLoading(); renderDashboard(); });
+      } else {
+        renderDashboard();
+      }
+    }
   });
   $('filtro-regiones').addEventListener('click', e => {
     if (e.target.closest('#amb-limpiar')) { STATE.mio = false; setAmbito(null); }
