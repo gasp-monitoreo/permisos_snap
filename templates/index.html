@@ -205,40 +205,6 @@
     <!-- Centro de atención: lo que requiere acción hoy (static/js/atencion.js) -->
     <section id="atencion" class="atn" aria-label="Requiere atención"></section>
 
-    <!-- Desempeño del período: KPIs siempre visibles antes del estado de solicitudes -->
-    <details class="desempeno" id="desempeno" open>
-      <summary>
-        <span class="desempeno-tit">Desempeño del período</span>
-        <span class="desempeno-res" id="desempeno-res"></span>
-        <span class="desempeno-abrir"><span class="cerrado">Ver cifras y gráficos</span><span class="abierto">Ocultar</span></span>
-      </summary>
-      <div class="kpi-grid">
-        <div class="kpi-card kpi-total">
-          <div class="kpi-icon">📁</div>
-          <div class="kpi-value" id="kpi-total">–</div>
-          <div class="kpi-label">Ingresadas</div>
-          <div class="kpi-split" id="kpi-total-split"></div>
-        </div>
-        <div class="kpi-card kpi-completado">
-          <div class="kpi-icon">✅</div>
-          <div class="kpi-value" id="kpi-completado">–</div>
-          <div class="kpi-label">Aprobadas</div>
-          <div class="kpi-split" id="kpi-completado-split"></div>
-        </div>
-        <div class="kpi-card kpi-rechazado">
-          <div class="kpi-icon">❌</div>
-          <div class="kpi-value" id="kpi-rechazado">–</div>
-          <div class="kpi-label">Rechazadas</div>
-          <div class="kpi-split" id="kpi-rechazado-split"></div>
-        </div>
-        <div class="kpi-card kpi-avance">
-          <div class="kpi-icon">⏱️</div>
-          <div class="kpi-value" id="kpi-mediana">–</div>
-          <div class="kpi-label">Días para resolver (mediana)</div>
-          <div class="kpi-split" id="kpi-mediana-split"></div>
-        </div>
-      </div>
-    </details>
 
     <!-- Estado de las solicitudes (situaciones) -->
     <div id="resumen-estado" class="panorama"></div>
