@@ -207,7 +207,7 @@ function renderAtencion(ts, region) {
       <span class="atn-escala">${porArea === 'etapa' ? 'Agrupado por etapa en curso' : porArea ? 'Agrupado por área protegida · clic en un área para acercarse' : 'Agrupado por región · clic en una región para acercarse'}</span>
     </div>
     <p class="atn-frase">${_atnFrase(a)}</p>
-    <div class="atn-cards">${t2}${t1}${t4}${t5}${t3}</div>
+    <div class="atn-cards">${t2}${t1}${t4}${t5}</div>
     ${avisoDup}`;
 
   if (!root.dataset.listo) {
