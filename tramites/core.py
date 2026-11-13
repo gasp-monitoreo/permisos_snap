@@ -106,6 +106,14 @@ def _norm_nombre(s):
 
 # ── API client ────────────────────────────────────────────────────────────────
 
+def _sin_token(texto):
+    """Quita el token de CeroFilas de cualquier texto que pueda llegar al usuario o a los logs."""
+    texto = str(texto)
+    if TOKEN:
+        texto = texto.replace(TOKEN, '***')
+    return _re.sub(r'(token=)[^&\s]+', r'\1***', texto)
+
+
 def api_get(path, params=None):
     params = dict(params or {})
     params['token'] = TOKEN
@@ -120,12 +128,17 @@ def api_get(path, params=None):
             if code in (502, 503, 504) and attempt < 2:
                 _time.sleep(1.5 ** attempt)
                 continue
-            raise
-        except (requests.ConnectionError, requests.Timeout):
+            if e.response is not None and e.response.headers.get('x-amzn-waf-action'):
+                msg = (f'CeroFilas bloqueó la consulta a su API con una verificación antibots '
+                       f'(AWS WAF, HTTP {code}). Debe resolverlo el soporte de CeroFilas.')
+            else:
+                msg = _sin_token(e)
+            raise requests.HTTPError(msg, response=e.response) from None
+        except (requests.ConnectionError, requests.Timeout) as e:
             if attempt < 2:
                 _time.sleep(1.5 ** attempt)
                 continue
-            raise
+            raise type(e)(_sin_token(e)) from None
 
 
 def extract_datos(datos_list):
