@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from django.core.cache import cache
 
 FRESCO_SEG   = 10 * 60          # 10 min
-VIGENCIA_SEG = 30 * 24 * 3600   # se conserva hasta 30 días (respaldo si CeroFilas cae)
+VIGENCIA_SEG = 365 * 24 * 3600  # se conserva un año (respaldo si CeroFilas cae o bloquea)
 TZ = ZoneInfo('America/Santiago')
 
 _en_curso = set()
@@ -46,6 +46,9 @@ def _descargar(desde, hasta):
 
 
 def _refrescar_en_segundo_plano(desde, hasta):
+    from .core import cerofilas_bloqueado
+    if cerofilas_bloqueado():      # no insistir: consultar más alarga el bloqueo
+        return
     clave = _clave(desde, hasta)
     with _lock:
         if clave in _en_curso:
@@ -64,22 +67,47 @@ def _refrescar_en_segundo_plano(desde, hasta):
     threading.Thread(target=run, daemon=True).start()
 
 
+def _guardado(desde, hasta):
+    """Lo guardado para el rango. Un rango de varios años se arma con los años sueltos
+    (que son los que actualiza la carga manual) si están todos y son más recientes."""
+    entrada = cache.get(_clave(desde, hasta))
+    if desde == hasta:
+        return entrada
+    anios = [cache.get(_clave(a, a)) for a in range(desde, hasta + 1)]
+    if all(anios):
+        compuesto = {'ts': min(a['ts'] for a in anios), 'data': [t for a in anios for t in a['data']]}
+        if entrada is None or compuesto['ts'] >= entrada['ts']:
+            return compuesto
+    return entrada
+
+
 def obtener(desde, hasta, forzar=False):
     """Retorna {'ts', 'data'} para el rango de años."""
-    entrada = None if forzar else cache.get(_clave(desde, hasta))
-    if entrada is not None:
-        if time.time() - entrada['ts'] > FRESCO_SEG:
+    guardado = _guardado(desde, hasta)
+    if guardado is not None and not forzar:
+        if time.time() - guardado['ts'] > FRESCO_SEG:
             _refrescar_en_segundo_plano(desde, hasta)
-        return entrada
+        return guardado
+    try:
+        return _descargar(desde, hasta)
+    except Exception:
+        if guardado is None:
+            raise
+        return dict(guardado, aviso_bloqueo=True)   # Cero Filas no respondió: lo último guardado
 
-    return _descargar(desde, hasta)
+
+def guardar_anio(anio, data, ts=None):
+    cache.set(_clave(anio, anio), {'ts': ts or time.time(), 'data': data}, VIGENCIA_SEG)
 
 
 def precalentar_anio_actual(anios_atras=2):
     """Al arrancar: deja listo el año en curso y los anteriores (usados por la presión
     sobre áreas protegidas). Un solo worker descarga."""
+    from .core import cerofilas_bloqueado
     actual = datetime.now(TZ).year
     pendientes = [a for a in range(actual, actual - anios_atras - 1, -1) if cache.get(_clave(a, a)) is None]
+    if cerofilas_bloqueado():
+        return
     if not pendientes or not cache.add('tramites:precalentando', 1, 900):
         return
     try:

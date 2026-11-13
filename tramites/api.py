@@ -17,7 +17,7 @@ from ninja import File, Form, NinjaAPI, UploadedFile
 
 from .core import (
     INVESTIGACION_PROCESO_IDS, api_get, es_tramite_visible,
-    fetch_all_processes, fetch_all_tramites, normalize_tramite,
+    fetch_all_processes, fetch_all_tramites, normalize_tramite, tramite_normalizado,
 )
 from .email_utils import (
     GMAIL_AVAILABLE, _GMAIL_IMPORT_ERROR, email_html_body,
@@ -122,7 +122,9 @@ def get_tramites(
             forzar = fresco and perfil_de(request.user).puede('editar')
             entrada = tramites_cache.obtener(desde, hasta, forzar=forzar)
             data = privacidad.tramites(request, _filtrar_region(request, entrada['data']))
+            from .core import cerofilas_bloqueado
             return {'ok': True, 'data': data, 'total': len(data),
+                    'from_cache': bool(entrada.get('aviso_bloqueo')) or cerofilas_bloqueado(),
                     'actualizado_en': datetime.fromtimestamp(entrada['ts']).isoformat()}
 
         date_cutoff = None
@@ -209,9 +211,7 @@ def debug_areas(request, tramite_id: int):
 @api.get('/tramites/{tramite_id}')
 def get_tramite(request, tramite_id: int):
     try:
-        data = api_get(f'/tramites/{tramite_id}')
-        t    = data.get('tramite', data)
-        norm = normalize_tramite(t)
+        norm = tramite_normalizado(tramite_id)
         visibles = _filtrar_region(request, [norm])
         return {'ok': True, 'data': privacidad.tramites(request, visibles)[0]}
     except _requests.HTTPError as e:
@@ -228,6 +228,44 @@ def get_tramite(request, tramite_id: int):
 def cache_refresh(request):
     refresh_caches()
     return {'ok': True, 'msg': 'Regeneración en background iniciada.'}
+
+
+# ── Carga manual desde CeroFilas (mientras su WAF pida CAPTCHA) ──────────────
+
+@api.get('/cerofilas/estado')
+@requiere(superusuario=True)
+def cerofilas_estado(request):
+    from .core import cerofilas_bloqueado
+    from . import importacion
+    return {'ok': True, 'bloqueado': cerofilas_bloqueado(), 'ultima': importacion.ultima(),
+            'hay_token': bool(settings.CEROFILAS_TOKEN)}
+
+
+@api.get('/cerofilas/marcador')
+@requiere(superusuario=True)
+def cerofilas_marcador(request):
+    """Código del marcador del navegador. Lleva el token de la API: solo para el superusuario."""
+    ruta = os.path.join(settings.BASE_DIR, 'static', 'js', 'marcador_cerofilas.js')
+    with open(ruta, encoding='utf-8') as f:
+        codigo = f.read()
+    codigo = (codigo.replace('__TOKEN__', _json.dumps(settings.CEROFILAS_TOKEN)[1:-1])
+                    .replace('__PLATAFORMA__', request.build_absolute_uri('/')))
+    log.info('Marcador de CeroFilas entregado a %s', request.user.pk)
+    return {'ok': True, 'codigo': codigo}
+
+
+@api.post('/cerofilas/importar')
+@requiere(superusuario=True)
+def cerofilas_importar(request, archivo: UploadedFile = File(...)):
+    from . import importacion
+    try:
+        datos = importacion.leer_archivo(archivo.read())
+        resumen = importacion.importar(datos, usuario=request.user.email or request.user.username)
+    except importacion.ArchivoInvalido as e:
+        return api.create_response(request, {'ok': False, 'error': str(e)}, status=400)
+    log.info('Carga manual desde CeroFilas: %s trámites (%s) por %s',
+             resumen['tramites'], resumen['modo'], request.user.pk)
+    return {'ok': True, 'resumen': resumen}
 
 
 # ── Portada historico ─────────────────────────────────────────────────────────
@@ -806,9 +844,7 @@ def tramite_n6_borrar(request, tramite_id: int, archivo_id: int):
 def _t_para_drive(tramite_id: int):
     """Retorna un dict mínimo {id, nombre_solicitante} suficiente para _entregas()."""
     try:
-        data = api_get(f'/tramites/{tramite_id}')
-        t = data.get('tramite', data)
-        return normalize_tramite(t)
+        return tramite_normalizado(tramite_id)
     except Exception:
         return {'id': tramite_id, 'nombre_solicitante': ''}
 
@@ -1178,8 +1214,7 @@ def accesos_generar(request):
     from .portal import generar_acceso
     try:
         tid = int(_cuerpo(request).get('tramite_id'))
-        data = api_get(f'/tramites/{tid}')
-        t = normalize_tramite(data.get('tramite', data))
+        t = tramite_normalizado(tid)
     except (TypeError, ValueError):
         return api.create_response(request, {'ok': False, 'error': 'Número de trámite no válido.'}, status=400)
     except Exception:

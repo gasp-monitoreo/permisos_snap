@@ -114,7 +114,21 @@ def _sin_token(texto):
     return _re.sub(r'(token=)[^&\s]+', r'\1***', texto)
 
 
+MSG_BLOQUEO_WAF = ('CeroFilas está pidiendo una verificación antibots (CAPTCHA) y bloquea las '
+                   'consultas automáticas de la plataforma. Use «Cargar desde CeroFilas» para actualizar.')
+_CLAVE_BLOQUEO = 'cerofilas:bloqueado'
+_PAUSA_BLOQUEO = 30 * 60   # mientras dure, no se consulta a CeroFilas (consultar más alarga el bloqueo)
+
+
+def cerofilas_bloqueado():
+    from django.core.cache import cache
+    return bool(cache.get(_CLAVE_BLOQUEO))
+
+
 def api_get(path, params=None):
+    from django.core.cache import cache
+    if cache.get(_CLAVE_BLOQUEO):
+        raise requests.HTTPError(MSG_BLOQUEO_WAF)
     params = dict(params or {})
     params['token'] = TOKEN
     url = f'{API_BASE}{path}'
@@ -129,8 +143,8 @@ def api_get(path, params=None):
                 _time.sleep(1.5 ** attempt)
                 continue
             if e.response is not None and e.response.headers.get('x-amzn-waf-action'):
-                msg = (f'CeroFilas bloqueó la consulta a su API con una verificación antibots '
-                       f'(AWS WAF, HTTP {code}). Debe resolverlo el soporte de CeroFilas.')
+                cache.set(_CLAVE_BLOQUEO, 1, _PAUSA_BLOQUEO)
+                msg = MSG_BLOQUEO_WAF
             else:
                 msg = _sin_token(e)
             raise requests.HTTPError(msg, response=e.response) from None
@@ -500,6 +514,31 @@ def es_borrador(t):
 
 def es_tramite_visible(t):
     return not es_borrador(t)
+
+
+def tramite_en_cache(tramite_id):
+    """Busca el trámite (normalizado) en los años guardados en la caché de la plataforma.
+    Sirve cuando Cero Filas no responde (p. ej. su WAF pide CAPTCHA)."""
+    from django.core.cache import cache
+    tid = int(tramite_id)
+    for anio in range(datetime.now().year + 1, 2014, -1):
+        entrada = cache.get(f'tramites:{anio}-{anio}')
+        for t in (entrada or {}).get('data') or []:
+            if t.get('id') == tid:
+                return t
+    return None
+
+
+def tramite_normalizado(tramite_id):
+    """Trámite normalizado: desde Cero Filas y, si no responde, desde la caché de la plataforma."""
+    try:
+        data = api_get(f'/tramites/{int(tramite_id)}')
+        return normalize_tramite(data.get('tramite', data))
+    except (requests.RequestException, ValueError):
+        t = tramite_en_cache(tramite_id)
+        if t is None:
+            raise
+        return t
 
 
 # ── Fetching ──────────────────────────────────────────────────────────────────

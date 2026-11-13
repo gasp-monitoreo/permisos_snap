@@ -145,10 +145,9 @@ def test_importar_por_el_portal_no_guarda_hasta_confirmar():
 @pytest.mark.django_db
 def test_superusuario_genera_acceso_y_la_clave_sirve(monkeypatch):
     import tramites.api as api_mod
-    monkeypatch.setattr(api_mod, 'normalize_tramite', lambda t: t)
-    monkeypatch.setattr(api_mod, 'api_get', lambda url: {'tramite': {
+    monkeypatch.setattr(api_mod, 'tramite_normalizado', lambda tid: {
         'id': 555, 'proceso_id': 517, 'nombre_solicitante': 'Ana Pérez', 'areas_protegidas': ['Parque Nacional Conguillío'],
-        'regiones_list': ['Araucanía'], 'datos_raw': {'fecha_inicio_actividades': '01-11-2026', 'fecha_termino_actividades': '31-12-2026'}}})
+        'regiones_list': ['Araucanía'], 'datos_raw': {'fecha_inicio_actividades': '01-11-2026', 'fecha_termino_actividades': '31-12-2026'}})
     adm = _usuario('admin@conaf.cl', superusuario=True, secciones=[])
     r = _post(_cliente(adm), '/api/accesos', {'tramite_id': 555})
     assert r.status_code == 200, r.content

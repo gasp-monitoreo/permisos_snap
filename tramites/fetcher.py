@@ -6,6 +6,7 @@ from datetime import datetime
 from .core import (
     _add_months, _parse_date_flexible, api_get, normalize_tramite,
     fetch_all_tramites, extract_titulo, extract_texto_clasificacion, extract_colecta,
+    tramite_normalizado,
     INVESTIGACION_PROCESO_IDS, TODOS_PROCESO_IDS,
 )
 
@@ -19,6 +20,73 @@ _lock = threading.Lock()
 
 
 # ── Compliance ────────────────────────────────────────────────────────────────
+
+def _fila_compliance(norm, HOY):
+    """Fila de cumplimiento (informe vencido) o None si no corresponde."""
+    datos = norm.get('datos_raw', {}) or {}
+    fta_str = (
+        datos.get('fecha_termino_actividades') or datos.get('fecha_termino_actividad') or
+        datos.get('fecha_fin_actividades') or datos.get('fecha_fin_investigacion') or
+        datos.get('fecha_termino_trabajo_campo')
+    )
+    if not fta_str:
+        return None
+    fta_dt = _parse_date_flexible(fta_str)
+    if fta_dt is None or _add_months(fta_dt, 36) >= HOY:
+        return None
+    titulo = extract_titulo(datos)
+    return {
+        'id':                        norm['id'],
+        'proceso_id':                norm['proceso_id'],
+        'estado':                    norm['estado'],
+        'nombre_solicitante':        norm['nombre_solicitante'],
+        'email_solicitante':         norm['email_solicitante'],
+        'titulo_investigacion':      str(titulo).strip(),
+        'texto_clasificacion':       extract_texto_clasificacion(datos, titulo).strip(),
+        'colecta_muestras':          str(extract_colecta(datos)).strip(),
+        'fecha_termino_actividades': str(fta_str).strip()[:10],
+        'anios_transcurridos':       round((HOY - fta_dt).days / 365.25, 1),
+        'fecha_modificacion':        norm.get('fecha_modificacion') or '',
+        'region':                    norm.get('region') or '',
+        'regiones_list':             norm.get('regiones_list') or [],
+    }
+
+
+def _registro_compliance(r):
+    from .models import ComplianceRecord
+    return ComplianceRecord(
+        tramite_id=r['id'], proceso_id=r.get('proceso_id', 0),
+        estado=r['estado'], nombre_solicitante=r['nombre_solicitante'],
+        email_solicitante=r['email_solicitante'],
+        titulo_investigacion=r['titulo_investigacion'],
+        texto_clasificacion=r['texto_clasificacion'],
+        colecta_muestras=r['colecta_muestras'],
+        fecha_termino_actividades=r['fecha_termino_actividades'],
+        anios_transcurridos=r['anios_transcurridos'],
+        fecha_modificacion=r['fecha_modificacion'],
+        region=r['region'], regiones_list=r['regiones_list'],
+    )
+
+
+def _guardar_compliance(resultados, revisados, HOY):
+    from .models import ComplianceRecord, CacheStatus
+    if not resultados and ComplianceRecord.objects.exists():
+        print('[cache] compliance: resultado vacío; se mantienen los datos anteriores')
+        return
+    resultados.sort(key=lambda x: x.get('fecha_termino_actividades') or '')
+    ComplianceRecord.objects.all().delete()
+    ComplianceRecord.objects.bulk_create([_registro_compliance(r) for r in resultados], ignore_conflicts=True)
+    CacheStatus.objects.update_or_create(name='compliance',
+                                         defaults={'fetched_at': HOY, 'record_count': len(resultados)})
+    with _lock:
+        _compliance_cache.update({'ts': HOY, 'data': resultados, 'revisados': revisados})
+
+
+def get_compliance_guardado():
+    from .models import ComplianceRecord
+    records = [r.to_dict() for r in ComplianceRecord.objects.all()]
+    return records, len(records)
+
 
 def _do_fetch_compliance():
     from .models import ComplianceRecord, CacheStatus
@@ -38,6 +106,10 @@ def _do_fetch_compliance():
         for items in ex.map(_fetch_list, INVESTIGACION_PROCESO_IDS):
             all_raw.extend(items)
 
+    if not all_raw:      # Cero Filas no respondió: se conserva lo guardado
+        print('[cache] compliance: Cero Filas no respondió; se mantienen los datos anteriores')
+        return get_compliance_guardado()
+
     seen_ids, candidatos = set(), []
     for t in all_raw:
         tid = t.get('id')
@@ -47,77 +119,19 @@ def _do_fetch_compliance():
 
     def _check(tid):
         try:
-            data  = api_get(f'/tramites/{tid}')
-            t_raw = data.get('tramite', data)
-            norm  = normalize_tramite(t_raw)
-            datos = norm.get('datos_raw', {})
-
-            fta_str = (
-                datos.get('fecha_termino_actividades') or datos.get('fecha_termino_actividad') or
-                datos.get('fecha_fin_actividades') or datos.get('fecha_fin_investigacion') or
-                datos.get('fecha_termino_trabajo_campo')
-            )
-            if not fta_str:
-                return None
-            fta_dt = _parse_date_flexible(fta_str)
-            if fta_dt is None or _add_months(fta_dt, 36) >= HOY:
-                return None
-
-            anios  = round((HOY - fta_dt).days / 365.25, 1)
-            titulo = extract_titulo(datos)
-            return {
-                'id':                        norm['id'],
-                'proceso_id':                norm['proceso_id'],
-                'estado':                    norm['estado'],
-                'nombre_solicitante':        norm['nombre_solicitante'],
-                'email_solicitante':         norm['email_solicitante'],
-                'titulo_investigacion':      str(titulo).strip(),
-                'texto_clasificacion':       extract_texto_clasificacion(datos, titulo).strip(),
-                'colecta_muestras':          str(extract_colecta(datos)).strip(),
-                'fecha_termino_actividades': str(fta_str).strip()[:10],
-                'anios_transcurridos':       anios,
-                'fecha_modificacion':        norm.get('fecha_modificacion') or '',
-                'region':                    norm.get('region') or '',
-                'regiones_list':             norm.get('regiones_list') or [],
-            }
+            return _fila_compliance(tramite_normalizado(tid), HOY)
         except Exception:
             return None
 
     resultados = []
     if candidatos:
-        with ThreadPoolExecutor(max_workers=min(40, max(1, len(candidatos)))) as ex:
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(candidatos)))) as ex:
             for r in as_completed({ex.submit(_check, tid) for tid in candidatos}):
                 v = r.result()
                 if v:
                     resultados.append(v)
 
-    resultados.sort(key=lambda x: x.get('fecha_termino_actividades') or '')
-
-    # Persist to DB
-    ComplianceRecord.objects.all().delete()
-    ComplianceRecord.objects.bulk_create([
-        ComplianceRecord(
-            tramite_id=r['id'], proceso_id=r.get('proceso_id', 0),
-            estado=r['estado'], nombre_solicitante=r['nombre_solicitante'],
-            email_solicitante=r['email_solicitante'],
-            titulo_investigacion=r['titulo_investigacion'],
-            texto_clasificacion=r['texto_clasificacion'],
-            colecta_muestras=r['colecta_muestras'],
-            fecha_termino_actividades=r['fecha_termino_actividades'],
-            anios_transcurridos=r['anios_transcurridos'],
-            fecha_modificacion=r['fecha_modificacion'],
-            region=r['region'], regiones_list=r['regiones_list'],
-        ) for r in resultados
-    ], ignore_conflicts=True)
-
-    CacheStatus.objects.update_or_create(
-        name='compliance',
-        defaults={'fetched_at': HOY, 'record_count': len(resultados)},
-    )
-
-    with _lock:
-        _compliance_cache.update({'ts': HOY, 'data': resultados, 'revisados': len(candidatos)})
-
+    _guardar_compliance(resultados, len(candidatos), HOY)
     return resultados, len(candidatos)
 
 
@@ -148,6 +162,35 @@ def get_compliance_data():
 
 # ── Portada historico ─────────────────────────────────────────────────────────
 
+def _fila_historico(norm):
+    if norm.get('borrador'):
+        return None
+    datos  = norm.get('datos_raw', {}) or {}
+    titulo = extract_titulo(datos)
+    return {
+        'id':                   norm['id'],
+        'proceso_id':           norm['proceso_id'],
+        'estado':               norm['estado'],
+        'nombre_solicitante':   norm['nombre_solicitante'],
+        'email_solicitante':    norm['email_solicitante'],
+        'titulo_investigacion': titulo.strip(),
+        'texto_clasificacion':  extract_texto_clasificacion(datos, titulo).strip(),
+        'regiones_list':        norm.get('regiones_list', []),
+        'fecha_inicio':         norm.get('fecha_inicio') or '',
+    }
+
+
+def _registro_historico(r):
+    from .models import PortadaHistoricoRecord
+    return PortadaHistoricoRecord(
+        tramite_id=r['id'], proceso_id=r['proceso_id'], estado=r['estado'],
+        nombre_solicitante=r['nombre_solicitante'], email_solicitante=r['email_solicitante'],
+        titulo_investigacion=r['titulo_investigacion'],
+        texto_clasificacion=r['texto_clasificacion'],
+        regiones_list=r['regiones_list'], fecha_inicio=r['fecha_inicio'],
+    )
+
+
 def _do_fetch_historico():
     from .models import PortadaHistoricoRecord, CacheStatus
 
@@ -155,25 +198,7 @@ def _do_fetch_historico():
 
     def _fetch(pid):
         try:
-            items, resultado = fetch_all_tramites(proceso_id=pid), []
-            for t in items:
-                norm = normalize_tramite(t)
-                if norm.get('borrador'):
-                    continue
-                datos  = norm.get('datos_raw', {})
-                titulo = extract_titulo(datos)
-                resultado.append({
-                    'id':                   norm['id'],
-                    'proceso_id':           norm['proceso_id'],
-                    'estado':               norm['estado'],
-                    'nombre_solicitante':   norm['nombre_solicitante'],
-                    'email_solicitante':    norm['email_solicitante'],
-                    'titulo_investigacion': titulo.strip(),
-                    'texto_clasificacion':  extract_texto_clasificacion(datos, titulo).strip(),
-                    'regiones_list':        norm.get('regiones_list', []),
-                    'fecha_inicio':         norm.get('fecha_inicio') or '',
-                })
-            return resultado
+            return [f for f in (_fila_historico(normalize_tramite(t)) for t in fetch_all_tramites(proceso_id=pid)) if f]
         except Exception:
             return []
 
@@ -188,17 +213,12 @@ def _do_fetch_historico():
             seen.add(t['id'])
             dedup.append(t)
 
-    PortadaHistoricoRecord.objects.all().delete()
-    PortadaHistoricoRecord.objects.bulk_create([
-        PortadaHistoricoRecord(
-            tramite_id=r['id'], proceso_id=r['proceso_id'], estado=r['estado'],
-            nombre_solicitante=r['nombre_solicitante'], email_solicitante=r['email_solicitante'],
-            titulo_investigacion=r['titulo_investigacion'],
-            texto_clasificacion=r['texto_clasificacion'],
-            regiones_list=r['regiones_list'], fecha_inicio=r['fecha_inicio'],
-        ) for r in dedup
-    ], ignore_conflicts=True)
+    if not dedup:        # Cero Filas no respondió: se conserva lo guardado
+        print('[cache] portada_historico: Cero Filas no respondió; se mantienen los datos anteriores')
+        return [r.to_dict() for r in PortadaHistoricoRecord.objects.all()]
 
+    PortadaHistoricoRecord.objects.all().delete()
+    PortadaHistoricoRecord.objects.bulk_create([_registro_historico(r) for r in dedup], ignore_conflicts=True)
     CacheStatus.objects.update_or_create(
         name='portada_historico',
         defaults={'fetched_at': now, 'record_count': len(dedup)},
@@ -276,3 +296,39 @@ def init_db_caches():
             threading.Thread(target=fetch_fn, daemon=True).start()
         except Exception as exc:
             print(f'[cache] {name}: error al inicializar: {exc}')
+
+
+# ── Carga manual desde CeroFilas (ver tramites/importacion.py) ───────────────
+
+def actualizar_desde_importacion(normalizados):
+    """Actualiza histórico y cumplimiento solo con los trámites importados (sin borrar el resto)."""
+    from .models import ComplianceRecord, PortadaHistoricoRecord, CacheStatus
+    HOY = datetime.now()
+    corte = _add_months(HOY, -36)
+    ids_todos = set(TODOS_PROCESO_IDS)
+    ids_inv = set(INVESTIGACION_PROCESO_IDS)
+    n_hist = n_comp = 0
+    for norm in normalizados:
+        tid, pid = norm.get('id'), norm.get('proceso_id')
+        if not tid or pid not in ids_todos:
+            continue
+        PortadaHistoricoRecord.objects.filter(tramite_id=tid).delete()
+        fila = _fila_historico(norm)
+        if fila:
+            _registro_historico(fila).save()
+            n_hist += 1
+        if pid in ids_inv:
+            ComplianceRecord.objects.filter(tramite_id=tid).delete()
+            inicio = _parse_date_flexible(norm.get('fecha_inicio'))
+            fila = _fila_compliance(norm, HOY) if (inicio is None or inicio <= corte) else None
+            if fila:
+                _registro_compliance(fila).save()
+                n_comp += 1
+    # Marca de frescura: evita que se intente descargar todo de nuevo desde Cero Filas
+    for nombre, modelo in (('portada_historico', PortadaHistoricoRecord), ('compliance', ComplianceRecord)):
+        CacheStatus.objects.update_or_create(name=nombre,
+                                             defaults={'fetched_at': HOY, 'record_count': modelo.objects.count()})
+    with _lock:
+        _compliance_cache.update({'ts': None, 'data': None, 'revisados': 0})
+        _historico_cache.update({'ts': None, 'data': None})
+    return n_hist, n_comp

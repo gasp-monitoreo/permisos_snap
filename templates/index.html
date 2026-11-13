@@ -136,6 +136,9 @@
     <button id="btn-refresh" class="btn-icon" title="Actualizar datos">
       <span id="refresh-icon">↻</span>
     </button>
+    {% if perfil.superusuario %}
+    <button id="btn-cerofilas" class="btn-cerofilas" title="Cargar trámites descargados desde CeroFilas">⇪ CeroFilas</button>
+    {% endif %}
     <div id="last-update" class="last-update">–</div>
   </div>
 </header>
@@ -648,6 +651,34 @@
 {% endif %}
 
 {% if perfil.superusuario %}
+<!-- ══════════════════════ MODAL: CARGA DESDE CEROFILAS ══════════════════════ -->
+<div id="modal-cerofilas" class="modal-overlay" style="display:none">
+  <div class="modal-box modal-box--chico cf-box">
+    <div class="modal-header">
+      <div class="modal-title">Actualizar desde CeroFilas</div>
+      <button class="modal-close" data-cerrar-cf>✕</button>
+    </div>
+    <div class="modal-body cf-body">
+      <p id="cf-estado" class="cf-estado">Consultando…</p>
+      <ol class="cf-pasos">
+        <li><b>Una sola vez:</b> arrastre este botón a la barra de marcadores de su navegador
+          (si no la ve: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).<br>
+          <a id="cf-marcador" class="cf-marcador" href="#" title="Arrástrelo a la barra de marcadores">⇩ Descargar trámites</a>
+          <small>Lleva el token de la API de CeroFilas: no lo comparta.</small></li>
+        <li>Abra <a href="https://conaf.cerofilas.gob.cl/backend/procesos" target="_blank" rel="noopener">CeroFilas (backend)</a>,
+          resuelva la verificación si la pide y presione el marcador. Para el uso diario deje <b>7</b> días.
+          Se descargará un archivo <code>tramites_cerofilas_….json.gz</code>.</li>
+        <li>Súbalo aquí:
+          <form id="cf-form" class="cf-form">
+            <input type="file" id="cf-archivo" accept=".json,.gz,application/json,application/gzip" required>
+            <button type="submit" class="btn-primary btn-sm">Cargar archivo</button>
+          </form></li>
+      </ol>
+      <p id="cf-resultado" class="cf-resultado" hidden></p>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════════════ MODAL: USUARIO ══════════════════════ -->
 <div id="modal-usuario" class="modal-overlay" style="display:none">
   <div class="modal-box">
@@ -854,6 +885,7 @@
 <script src="/static/js/perfil.js"></script>
 <script src="/static/js/privacidad.js"></script>
 {% if perfil.superusuario %}<script src="/static/js/usuarios.js"></script>{% endif %}
+{% if perfil.superusuario %}<script src="/static/js/importar.js"></script>{% endif %}
 {% if perfil.superusuario %}<script src="/static/js/historial.js"></script>{% endif %}
 {% if perfil.superusuario %}<script src="/static/js/accesos.js"></script>{% endif %}
 <script src="/static/js/convenios.js"></script>

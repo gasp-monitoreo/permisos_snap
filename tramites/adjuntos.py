@@ -234,11 +234,10 @@ def zip_resoluciones(tramites, usuario, proteger=False):
 def tramite_vivo(tramite_id):
     """Trámite normalizado desde Cero Filas (caché de 10 minutos)."""
     from django.core.cache import cache
-    from .core import api_get, normalize_tramite
+    from .core import tramite_normalizado
     clave = f'adjuntos:tramite:{int(tramite_id)}'
     t = cache.get(clave)
     if t is None:
-        data = api_get(f'/tramites/{int(tramite_id)}')
-        t = normalize_tramite(data.get('tramite', data))
+        t = tramite_normalizado(tramite_id)
         cache.set(clave, t, 600)
     return t
