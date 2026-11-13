@@ -163,6 +163,9 @@ CACHES = {
 
 CEROFILAS_API_BASE = os.environ.get('CEROFILAS_API_BASE', 'https://conaf.cerofilas.gob.cl/backend/api')
 CEROFILAS_TOKEN    = os.environ.get('CEROFILAS_TOKEN',    '')
+# Quiénes ven el botón «⇪ CeroFilas» (carga manual; el marcador lleva el token de la API)
+CEROFILAS_CARGA_MANUAL = [e.strip().lower() for e in
+                          os.environ.get('CEROFILAS_CARGA_MANUAL', 'ignacio.diaz@conaf.cl').split(',') if e.strip()]
 GMAIL_REDIRECT_URI = os.environ.get('GMAIL_REDIRECT_URI', 'http://localhost/auth/gmail/callback')
 MYMEMORY_EMAIL     = os.environ.get('MYMEMORY_EMAIL', '')   # opcional: correo para la cuota de traducción
 # Envío de correos a investigadores (Numeral 6): desactivado; ENVIO_CORREOS_ACTIVO=1 lo reactiva

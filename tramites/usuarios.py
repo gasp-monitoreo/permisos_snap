@@ -155,7 +155,14 @@ def _prohibido(msg):
     return JsonResponse({'ok': False, 'error': msg}, status=403)
 
 
-def requiere(accion=None, seccion=None, superusuario=False):
+def puede_cargar_cerofilas(u):
+    """Carga manual desde CeroFilas: solo superusuarios de la lista CEROFILAS_CARGA_MANUAL."""
+    from django.conf import settings
+    correo = (u.email or u.username or '').lower()
+    return bool(u.is_authenticated and u.is_superuser and correo in settings.CEROFILAS_CARGA_MANUAL)
+
+
+def requiere(accion=None, seccion=None, superusuario=False, carga_cerofilas=False):
     """Decorador para endpoints: exige permiso de acción y/o acceso a una sección."""
     def deco(fn):
         @wraps(fn)
@@ -163,6 +170,8 @@ def requiere(accion=None, seccion=None, superusuario=False):
             u = request.user
             if superusuario and not u.is_superuser:
                 return _prohibido('Solo el superusuario puede hacer esto.')
+            if carga_cerofilas and not puede_cargar_cerofilas(u):
+                return _prohibido('La carga manual desde CeroFilas está reservada a su responsable.')
             p = perfil_de(u)
             if seccion and seccion not in p.secciones_visibles():
                 return _prohibido('No tiene acceso a esta sección.')

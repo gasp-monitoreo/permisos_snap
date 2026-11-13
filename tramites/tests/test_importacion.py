@@ -18,6 +18,7 @@ CLAVE = 'ClaveDePrueba-2026'
 
 @pytest.fixture(autouse=True)
 def _limpiar_cache(settings):
+    settings.CEROFILAS_CARGA_MANUAL = ['admin@conaf.cl']
     settings.CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
     cache.clear()
 
@@ -88,6 +89,20 @@ def test_solo_el_superusuario_carga_y_obtiene_el_marcador(settings):
     assert enc.post('/api/cerofilas/importar', {'archivo': _archivo([_crudo(1)])}).status_code == 403
     assert enc.get('/api/cerofilas/marcador').status_code == 403
     codigo = _cliente().get('/api/cerofilas/marcador').json()['codigo']
+    assert 'TOKEN-DE-PRUEBA' in codigo and '__TOKEN__' not in codigo
+
+
+@pytest.mark.django_db
+def test_otro_superusuario_no_ve_la_carga_manual(settings):
+    settings.CEROFILAS_TOKEN = 'TOKEN-DE-PRUEBA'
+    settings.CEROFILAS_CARGA_MANUAL = ['ignacio.diaz@conaf.cl']
+    c = _cliente()
+    assert c.get('/api/cerofilas/marcador').status_code == 403
+    assert c.post('/api/cerofilas/importar', {'archivo': _archivo([_crudo(1)])}).status_code == 403
+    assert 'btn-cerofilas' not in c.get('/').content.decode()
+    settings.CEROFILAS_CARGA_MANUAL = ['admin@conaf.cl']
+    assert 'btn-cerofilas' in c.get('/').content.decode()
+    codigo = c.get('/api/cerofilas/marcador').json()['codigo']
     assert 'TOKEN-DE-PRUEBA' in codigo and '__TOKEN__' not in codigo
 
 

@@ -136,7 +136,7 @@
     <button id="btn-refresh" class="btn-icon" title="Actualizar datos">
       <span id="refresh-icon">↻</span>
     </button>
-    {% if perfil.superusuario %}
+    {% if perfil.carga_cerofilas %}
     <button id="btn-cerofilas" class="btn-cerofilas" title="Cargar trámites descargados desde CeroFilas">⇪ CeroFilas</button>
     {% endif %}
     <div id="last-update" class="last-update">–</div>
@@ -650,7 +650,7 @@
 </div>
 {% endif %}
 
-{% if perfil.superusuario %}
+{% if perfil.carga_cerofilas %}
 <!-- ══════════════════════ MODAL: CARGA DESDE CEROFILAS ══════════════════════ -->
 <div id="modal-cerofilas" class="modal-overlay" style="display:none">
   <div class="modal-box modal-box--chico cf-box">
@@ -885,7 +885,7 @@
 <script src="/static/js/perfil.js"></script>
 <script src="/static/js/privacidad.js"></script>
 {% if perfil.superusuario %}<script src="/static/js/usuarios.js"></script>{% endif %}
-{% if perfil.superusuario %}<script src="/static/js/importar.js"></script>{% endif %}
+{% if perfil.carga_cerofilas %}<script src="/static/js/importar.js"></script>{% endif %}
 {% if perfil.superusuario %}<script src="/static/js/historial.js"></script>{% endif %}
 {% if perfil.superusuario %}<script src="/static/js/accesos.js"></script>{% endif %}
 <script src="/static/js/convenios.js"></script>

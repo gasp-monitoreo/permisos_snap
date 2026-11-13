@@ -233,7 +233,7 @@ def cache_refresh(request):
 # ── Carga manual desde CeroFilas (mientras su WAF pida CAPTCHA) ──────────────
 
 @api.get('/cerofilas/estado')
-@requiere(superusuario=True)
+@requiere(superusuario=True, carga_cerofilas=True)
 def cerofilas_estado(request):
     from .core import cerofilas_bloqueado
     from . import importacion
@@ -242,7 +242,7 @@ def cerofilas_estado(request):
 
 
 @api.get('/cerofilas/marcador')
-@requiere(superusuario=True)
+@requiere(superusuario=True, carga_cerofilas=True)
 def cerofilas_marcador(request):
     """Código del marcador del navegador. Lleva el token de la API: solo para el superusuario."""
     ruta = os.path.join(settings.BASE_DIR, 'static', 'js', 'marcador_cerofilas.js')
@@ -255,7 +255,7 @@ def cerofilas_marcador(request):
 
 
 @api.post('/cerofilas/importar')
-@requiere(superusuario=True)
+@requiere(superusuario=True, carga_cerofilas=True)
 def cerofilas_importar(request, archivo: UploadedFile = File(...)):
     from . import importacion
     try:
